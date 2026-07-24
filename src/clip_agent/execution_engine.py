@@ -244,6 +244,10 @@ class ChangyiExecutionEngine:
             "voice_keep": True,
         }
 
+        # 调色预设(脚本类型→色调映射)
+        color_map = {"老板IP": "warm", "团购售卖": "vivid", "引流进店": "bright"}
+        decisions["color_grade"] = color_map.get(job.script_type, "neutral")
+
         job.edit_decisions = decisions
         job.progress_pct = 75
         return job
@@ -276,18 +280,29 @@ class ChangyiExecutionEngine:
 
     # ===== Stage 6: 导出 =====
     def export(self, job: ExecutionJob, output_dir: str = "") -> ExecutionJob:
-        """导出: 剪映草稿 + 专业MP4渲染(有视频素材时)"""
+        """导出: 剪映草稿(首选·始终生成) → 打开剪映APP可手动精调
+        MP4渲染(备选·有素材时自动生成) → 快速预览用"""
         from .sentence_editor import generate_jianying_from_sentences
 
         job.status = "exporting"
         os.makedirs(output_dir or "", exist_ok=True) if output_dir else None
 
+        # 脚本类型→调色预设
+        color_map = {"老板IP": "warm", "团购售卖": "vivid", "引流进店": "bright"}
+        default_color = color_map.get(job.script_type, "neutral")
+
         try:
-            # 1. 剪映草稿(始终生成)
+            # 1. 剪映草稿(首选输出 — 始终生成)
             draft_path = generate_jianying_from_sentences(job.sentences, output_dir or "")
             job.draft_path = draft_path
+            job.enhancement_report["jianying_draft"] = True
+            job.enhancement_report["jianying_path"] = draft_path
+            job.enhancement_report["output_recommendation"] = (
+                "📱 首选: 用剪映APP打开草稿文件，可手动精调字幕/转场/滤镜后导出高清MP4\n"
+                "⚡ 备选: 下方MP4为AI自动渲染的快速预览版"
+            )
 
-            # 2. 专业MP4渲染(有视频文件时)
+            # 2. MP4快速渲染(备选 — 有视频文件时生成)
             video_segments = []
             for s in job.sentences:
                 vf = s.video_file if s.video_status == "uploaded" else (
@@ -297,12 +312,14 @@ class ChangyiExecutionEngine:
                         "file": vf, "duration": s.duration_sec,
                         "broll": s.is_broll,
                         "text": s.text_overlay,
+                        "color_grade": default_color,
+                        "transition": "dissolve" if s.is_broll else "cut",
                     })
 
             if video_segments and output_dir:
                 try:
                     from .pro_renderer import RenderJob, render_professional
-                    mp4_path = os.path.join(output_dir, "成片.mp4")
+                    mp4_path = os.path.join(output_dir, "成片_AI预览.mp4")
                     render_job = RenderJob(segments=video_segments, output_path=mp4_path,
                                           bgm_volume=job.edit_decisions.get("audio_mix", {}).get("bgm_volume", 0.3))
                     mp4_result = render_professional(render_job)
