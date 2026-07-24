@@ -42,14 +42,14 @@ def generate_clip_plans(analysis, user_intent="", plan_count=2, provider="", mod
                 logger.info("引擎方案: %d镜头", len(plan.segments))
                 # 质量审查(引擎成功时运行)
                 try: plan = quality_review_and_optimize(plan, analysis, max_iterations=1)
-                except Exception: pass
+                except Exception: logger.debug("质量审查跳过", exc_info=True)
                 plans = [plan]
                 if plan_count>=2:
                     try:
                         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                             alt = ex.submit(_generate_via_orchestrator, analysis, user_intent, True).result(timeout=120)
                         if alt and alt.segments: alt.plan_id=2; alt.plan_name+=" · 快速版"; plans.append(alt)
-                    except Exception: pass
+                    except Exception: logger.debug("替代方案生成跳过", exc_info=True)
                 if plan_count>=3 and analysis.has_talking_head:
                     alt_sk = "script_reading" if plan.visual_strategy=="good_presence" else "mixed"
                     fb = _fallback_plan(analysis, template, template_key, len(plans)+1, strategy_key=alt_sk)
@@ -146,7 +146,7 @@ def _fallback_plan(analysis, template, template_key, plan_id, strategy_key=""):
     if not tm: tm = analyses
     plan = ClipPlan(plan_id=plan_id, plan_name=f"{template.get('name','')} · {strategy.label}", plan_style=f"{pace or template.get('desc','')[:40]}", template_key=template_key, opening_duration=od, body_duration=bd, ending_duration=ed, visual_strategy=strategy_key, strategy_reason=f"模板:{template.get('script_type','')} | {sd['typical']}s/镜 | {','.join(pref_cam[:2])} | {trans_pref}", voiceover_duration=vd, voiceover_available=ht, bgm_style=template.get("bgm_style",""), bgm_suggestion=_get_bgm_for_plan(template), summary=f"{template.get('name','')}·{strategy.label}: {pace or ''} (开头{od}s→介绍{bd}s→结尾{ed}s)", difficulty="简单", estimated_time="15分钟")
     try: plan.bgm_recommendations = _get_bgm_list(template)
-    except Exception: pass
+    except Exception: logger.debug("BGM推荐获取跳过", exc_info=True)
     LAST_SHOT = None  # 蒙太奇规则: 追踪上一个镜头景别
     sid, cur = 0, 0.0
     om = tm[0] if tm else bm[0]; sid += 1

@@ -46,7 +46,7 @@ def load_checkpoint(session_id: str, step: str) -> dict | None:
         if cp.get("status") == "done":
             logger.info("断点恢复: %s/%s", session_id, step)
             return cp.get("data", {})
-    except Exception: pass
+    except Exception: logger.debug("断点恢复失败", exc_info=True)
     return None
 
 
