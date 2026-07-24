@@ -149,7 +149,13 @@ def analyze_reference_video(video_path: str) -> dict:
             if video:
                 ref_dna["width"] = video[0].get("width", 1080)
                 ref_dna["height"] = video[0].get("height", 1920)
-                ref_dna["fps"] = eval(video[0].get("r_frame_rate", "30/1"))
+                # Safe: parse "30000/1001" fraction without eval()
+                _rf = video[0].get("r_frame_rate", "30/1")
+                try:
+                    _parts = _rf.split("/")
+                    ref_dna["fps"] = float(_parts[0]) / float(_parts[1]) if len(_parts) == 2 else float(_rf)
+                except (ValueError, ZeroDivisionError):
+                    ref_dna["fps"] = 30.0
     except: pass
 
     # 场景检测→估算镜头数
