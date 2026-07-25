@@ -512,6 +512,113 @@ JSON格式:
         return job
 
 
+    # ===== 统一导演模式: 所有信号→导演→直接出片 =====
+    def execute_unified(self, job: ExecutionJob, output_dir: str = "",
+                        on_progress: callable = None) -> ExecutionJob:
+        """
+        🆕 统一导演模式 — 替代碎片化6阶段。
+
+        流程: 语义分析 + 音频理解 → 导演融合 → 导出
+        跳过了旧的分阶段流程, 一次导演决策替代所有中间步骤。
+        """
+        t0 = time.time()
+
+        if on_progress:
+            on_progress("understanding", 0, "🔍 并行理解: 语义+音频+视频...")
+
+        # Step 1: 并行理解
+        semantic_segments = []
+        audio_segments = []
+        whisper_gaps = []
+        video_scenes = []
+
+        # 1a. 语义理解
+        try:
+            from .semantic_engine import analyze_script
+            analysis = analyze_script(job.script_text, job.script_type, use_ai=True)
+            if analysis and analysis.segments:
+                semantic_segments = [
+                    {"text": s.text, "role": s.role, "emotion": s.emotion,
+                     "intensity": s.intensity, "visual_need": s.visual_need,
+                     "shot_type": s.shot_type, "broll_needed": s.broll_needed,
+                     "text_overlay": s.text_overlay, "text_position": s.text_position,
+                     "duration_sec": s.duration_sec, "start_sec": s.start_sec}
+                    for s in analysis.segments
+                ]
+                job.enhancement_report["semantic"] = {
+                    "emotional_arc": analysis.emotional_arc,
+                    "engine": "deepseek" if analysis.emotional_arc != "规则推断" else "keyword",
+                }
+        except Exception as e:
+            logger.warning("语义理解跳过: %s", e)
+
+        # 1b. 音频理解 (有素材时)
+        talking_slots = [s for s in job.sentences if hasattr(s, 'audio_status') and s.audio_status == "uploaded"]
+        if not talking_slots:
+            # 尝试从audio_slots获取
+            for idx, path in job.audio_slots.items():
+                if os.path.exists(path):
+                    try:
+                        from .media_understanding import understand_audio
+                        audio_data = understand_audio(path)
+                        whisper_gaps = [
+                            {"at_sec": g.get("at_sec", 0), "gap_ms": g.get("gap_ms", 0),
+                             "between": g.get("detail", "")}
+                            for g in audio_data.get("moments", []) if g.get("type") == "pause"
+                        ]
+                        if audio_data.get("segments"):
+                            audio_segments = [
+                                {"start": s["start"], "end": s["end"], "text": s["text"],
+                                 "emotion": "calm", "intensity": 5}
+                                for s in audio_data["segments"]
+                            ]
+                        job.enhancement_report["audio"] = {
+                            "transcript": audio_data.get("transcript", "")[:200],
+                            "moments": len(audio_data.get("moments", [])),
+                        }
+                        break
+                    except Exception as e:
+                        logger.debug("音频理解跳过: %s", e)
+
+        if on_progress:
+            on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")
+
+        # Step 2: 导演融合决策
+        from .director_ai import direct, direct_to_execution_job
+
+        plan = direct(
+            script_type=job.script_type,
+            semantic_segments=semantic_segments,
+            audio_segments=audio_segments,
+            whisper_gaps=whisper_gaps,
+            video_scenes=video_scenes,
+            use_ai=True,
+        )
+
+        if on_progress:
+            on_progress("exporting", 70, "📤 导出: 剪映草稿+MP4...")
+
+        # Step 3: 转换+导出
+        unified_job = direct_to_execution_job(plan, job.audio_slots, job.video_slots)
+        unified_job.job_id = job.job_id
+
+        # 继承enhancement_report
+        unified_job.enhancement_report.update(job.enhancement_report)
+        unified_job.enhancement_report["pipeline"] = "unified_director"
+
+        # 直接导出(跳过旧的分阶段流程)
+        if output_dir:
+            self.export(unified_job, output_dir)
+
+        elapsed = time.time() - t0
+        unified_job.status = "done" if not unified_job.errors else "failed"
+        logger.info("🎬 统一导演完成: %s | %d段 | %.1fs | 弧线=%s",
+                   unified_job.job_id, len(plan.segments), elapsed,
+                   plan.emotional_arc[:50])
+
+        return unified_job
+
+
 # 便捷函数
 def quick_execute(script_text: str, script_type: str = "团购售卖",
                   audio_slots: dict = None, video_slots: dict = None,
@@ -526,3 +633,25 @@ def quick_execute(script_text: str, script_type: str = "团购售卖",
         video_slots=video_slots or {},
     )
     return engine.execute(job, output_dir, on_progress)
+
+
+def quick_direct(script_text: str, script_type: str = "团购售卖",
+                 audio_slots: dict = None, video_slots: dict = None,
+                 output_dir: str = "", on_progress: callable = None) -> ExecutionJob:
+    """
+    🆕 统一导演模式 — 一行代码完成从理解到成片。
+
+    比 quick_execute 更强大:
+    - 语义+音频+视频并行理解
+    - 导演AI融合所有信号
+    - 一次决策替代所有中间步骤
+    """
+    engine = ChangyiExecutionEngine()
+    job = ExecutionJob(
+        job_id=f"direct_{int(time.time())}",
+        script_text=script_text,
+        script_type=script_type,
+        audio_slots=audio_slots or {},
+        video_slots=video_slots or {},
+    )
+    return engine.execute_unified(job, output_dir, on_progress)

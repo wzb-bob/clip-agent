@@ -60,7 +60,7 @@ from .style_transfer import (EditingDNA, extract_editing_dna, apply_style_to_seg
 from .sentence_editor import (ScriptSentence, parse_script_to_sentences, generate_jianying_from_sentences, render_sentence_editor_html, MATERIAL_HINTS)
 
 # ── 执行引擎(2) ──
-from .execution_engine import (ExecutionJob, ChangyiExecutionEngine, quick_execute)
+from .execution_engine import (ExecutionJob, ChangyiExecutionEngine, quick_execute, quick_direct)
 from .clip_this import clip_this, ClipResult
 
 # ── 脚本→剪辑联通桥(1) + 闭环反馈(1) ──
