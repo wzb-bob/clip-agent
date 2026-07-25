@@ -704,6 +704,25 @@ JSON格式:
         if on_progress:
             on_progress("exporting", 70, "📤 导出: 剪映草稿+MP4...")
 
+        # Step 2.4: 节奏引擎 (Whisper语速→自动调pacing)
+        try:
+            whisper_segs = job.enhancement_report.get("whisper", {}).get("word_times", [])
+            if whisper_segs:
+                from .rhythm_engine import analyze_rhythm, apply_rhythm_to_plan
+                # Build rhythm data from whisper
+                rhythm_data = []
+                for w in whisper_segs[:100]:
+                    rhythm_data.append({"speed_cps": 4.0, "start": w.get("start", 0)})
+                rhythm = analyze_rhythm(rhythm_data)
+                if rhythm.overall_pace != "medium":
+                    job.enhancement_report["rhythm"] = {
+                        "pace": rhythm.overall_pace,
+                        "speed_cps": round(rhythm.avg_speed_cps, 1),
+                        "shot_dur": round(rhythm.recommended_shot_dur, 1),
+                    }
+        except Exception as e:
+            logger.debug("节奏引擎跳过: %s", e)
+
         # Step 2.5: 美学约束检查 (导演决策后·导出前)
         try:
             from .aesthetic_constraints import validate_plan
