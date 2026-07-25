@@ -239,6 +239,22 @@ def _concat_simple(prepared: list, job: RenderJob) -> str:
     return main_track
 
 
+def _probe_has_audio(video_path: str) -> bool:
+    """检查视频文件是否有音频轨"""
+    try:
+        import json
+        r = subprocess.run(
+            ["ffprobe","-v","quiet","-print_format","json","-show_streams", video_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            streams = json.loads(r.stdout).get("streams", [])
+            return any(s.get("codec_type") == "audio" for s in streams)
+    except Exception:
+        pass
+    return False
+
+
 def _concat_with_xfade(prepared: list, job: RenderJob, font_path: str) -> str:
     """带crossfade转场的concat — 使用xfade滤镜实现段间溶解"""
     # Build filter_complex with xfade transitions
@@ -259,21 +275,27 @@ def _concat_with_xfade(prepared: list, job: RenderJob, font_path: str) -> str:
             filters.append(f"[{prev_out}][v{i}]xfade=transition=fade:duration={xfade_dur}:offset={offset}[xf{i}]")
             prev_out = f"xf{i}"
 
-    # Audio: concat all audio tracks
-    audio_inputs = "".join(f"[{i}:a]" for i in range(len(prepared)))
-    filters.append(f"{audio_inputs}concat=n={len(prepared)}:v=0:a=1[a]")
+    # Audio: concat all audio tracks (only if inputs have audio)
+    has_audio = _probe_has_audio(prepared[0]["file"]) if prepared else False
+    if has_audio:
+        audio_inputs = "".join(f"[{i}:a]" for i in range(len(prepared)))
+        filters.append(f"{audio_inputs}concat=n={len(prepared)}:v=0:a=1[a]")
+        audio_map = "-map [a]"
+    else:
+        audio_map = ""
 
     filter_str = ";".join(filters)
     main_track = tempfile.mktemp(suffix="_main_xf.mp4")
-    subprocess.run([
+    cmd = [
         "ffmpeg","-y","-hide_banner","-loglevel","error",
         *inputs,
         "-filter_complex", filter_str,
-        "-map", f"[{prev_out}]", "-map", "[a]",
-        "-c:v","libx264","-preset","medium","-crf","18",
-        "-c:a","aac","-b:a","192k",
-        main_track
-    ], timeout=180)
+        "-map", f"[{prev_out}]",
+    ]
+    if has_audio:
+        cmd.extend(["-map", "[a]", "-c:a", "aac", "-b:a", "192k"])
+    cmd.extend(["-c:v","libx264","-preset","medium","-crf","18", main_track])
+    subprocess.run(cmd, timeout=180)
     return main_track
 
 
@@ -301,7 +323,7 @@ def _overlay_broll(working: str, prepared: list, broll_indices: list, job: Rende
             f"pad={job.width}:{job.height}:(ow-iw)/2:(oh-ih)/2,"
             f"fade=t=in:st=0:d=0.3,fade=t=out:st={broll_dur-0.3}:d=0.3[bv];"
             f"[0:v][bv]overlay=0:0:enable='between(t,{tl['start']},{tl['end']})'[v]",
-            "-map","[v]","-map","0:a",
+            "-map","[v]","-map","0:a?",
             "-c:v","libx264","-preset","medium","-crf","18",
             "-c:a","aac","-b:a","192k",
             overlay_out
