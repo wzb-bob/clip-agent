@@ -115,7 +115,7 @@ def render_professional(job: RenderJob) -> RenderResult:
     output = job.output_path
     font_path = _find_font()
 
-    # ===== Step 1: 素材预处理(Trim+Lanczos缩放+调色+锐化) =====
+    # ===== Step 1: 素材预处理(Trim+Lanczos缩放+调色+锐化+音频归一化) =====
     prepared = []
     for i, seg in enumerate(job.segments):
         fp = seg.get("file", "")
@@ -136,14 +136,24 @@ def render_professional(job: RenderJob) -> RenderResult:
             "unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5",
         ]
 
-        subprocess.run([
-            "ffmpeg","-y","-hide_banner","-loglevel","error",
-            "-i", fp, "-t", str(dur),
-            "-vf", ",".join(vf_parts),
-            "-c:v","libx264","-preset","fast","-crf","18",
-            "-c:a","aac","-b:a","192k",
-            tmp
-        ], timeout=60)
+        # 检查是否有音频轨 → 加loudnorm归一化
+        has_audio = _probe_has_audio(fp)
+        af_parts = ["loudnorm=I=-16:TP=-1.5:LRA=11"] if has_audio else []
+
+        try:
+            cmd = [
+                "ffmpeg","-y","-hide_banner","-loglevel","error",
+                "-i", fp, "-t", str(dur),
+                "-vf", ",".join(vf_parts),
+                "-c:v","libx264","-preset","fast","-crf","18",
+            ]
+            if af_parts:
+                cmd.extend(["-af", ",".join(af_parts), "-c:a", "aac", "-b:a", "192k"])
+            cmd.append(tmp)
+            subprocess.run(cmd, timeout=60)
+        except Exception as e:
+            logger.warning("素材%d预处理失败: %s", i, e)
+            continue
 
         prepared.append({
             "file": tmp, "duration": dur,
@@ -152,6 +162,7 @@ def render_professional(job: RenderJob) -> RenderResult:
             "text_position": seg.get("text_position", "center"),
             "text_color": seg.get("text_color", "#FFFFFF"),
             "transition": seg.get("transition", "cut"),
+            "has_audio": has_audio,
         })
 
     if not prepared:
