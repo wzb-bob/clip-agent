@@ -297,8 +297,8 @@ def ai_director_decision(
 
         m = re.search(r'\{.*\}', content, re.DOTALL)
         if m:
-            from .semantic_engine import _repair_json
-            data = json.loads(_repair_json(m.group(0)))
+            from .semantic_engine import _repair_json, _parse_json_safe
+            data = _parse_json_safe(_repair_json(m.group(0)))
             elapsed = time.time() - t0
             logger.info("AI导演决策: %d段·%.1fs·风格=%s",
                        len(data.get("segments", [])), elapsed,

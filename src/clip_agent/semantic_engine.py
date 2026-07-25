@@ -66,23 +66,53 @@ JSON格式(严格):
 
 
 def _repair_json(raw: str) -> str:
-    """修复LLM生成JSON的常见错误: 尾逗号, 缺失引号, 截断补全"""
-    # 0. 去掉markdown代码块
+    """修复LLM生成JSON: 尾逗号, 缺失引号, 截断补全, markdown包装"""
     raw = raw.strip()
+    # 0. 去掉markdown包装
     if raw.startswith("```"):
-        raw = re.sub(r'^```\w*\n?', '', raw)
-        raw = re.sub(r'\n?```$', '', raw)
-    # 1. 移除尾逗号 (在 ] 或 } 之前)
+        lines = raw.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines)
+    # 1. 移除尾逗号
     raw = re.sub(r',\s*([}\]])', r'\1', raw)
     # 2. 修复缺失引号的key (word: → "word":)
     raw = re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', raw)
-    # 3. 截断修复: 找到最后一个完整的数组/对象结束
-    # 如果JSON在中途截断, 补全缺失的括号
+    # 3. 截断修复: 计算未闭合的括号并补全
     open_braces = raw.count('{') - raw.count('}')
     open_brackets = raw.count('[') - raw.count(']')
     raw = raw.rstrip(',\n\r\t ')
     raw += '}' * open_braces + ']' * open_brackets
+    # 4. 移除多余的连续逗号
+    raw = re.sub(r',\s*,', ',', raw)
     return raw
+
+
+def _parse_json_safe(raw: str) -> dict | None:
+    """安全JSON解析: 尝试多种修复方案"""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # 尝试: 只取第一个完整对象
+    depth = 0
+    end = 0
+    for i, c in enumerate(raw):
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end > 0:
+        try:
+            return json.loads(_repair_json(raw[:end]))
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
 def analyze_script_semantic(
@@ -133,16 +163,16 @@ def analyze_script_semantic(
         content = result.get("content", "") if isinstance(result, dict) else str(result)
         elapsed = time.time() - t0
 
-        # 提取JSON + 修复常见LLM错误
+        # 提取JSON + 安全解析
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if not json_match:
             logger.warning("LLM未返回有效JSON: %s...", content[:100])
             return None
 
-        raw_json = json_match.group(0)
-        # 修复: 尾逗号/缺失引号/多余文字
-        raw_json = _repair_json(raw_json)
-        data = json.loads(raw_json)
+        data = _parse_json_safe(_repair_json(json_match.group(0)))
+        if not data:
+            logger.warning("JSON解析失败: %s...", json_match.group(0)[:100])
+            return None
         logger.info("语义分析完成: %s·%d句·%.1fs", script_type, len(data.get("segments", [])), elapsed)
 
         return _parse_semantic_result(data, script_type, script_text)
