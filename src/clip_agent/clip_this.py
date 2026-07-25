@@ -31,20 +31,35 @@ class ClipResult:
 
 
 def clip_this(
-    script_text: str,
+    script_text: str = "",
     script_type: str = "团购售卖",
     audio_files: list[str] = None,
     video_files: list[str] = None,
     output_dir: str = "",
     bgm: str = "",
     on_progress: callable = None,
+    script_output: dict = None,
 ) -> ClipResult:
     """
-    终极一键剪辑
+    终极一键剪辑 — 支持两种模式:
+
+    🆕 桥接模式(Tab1→Tab4联通):
+        result = clip_this(script_output={
+            "script_type": "团购售卖",
+            "script_text": "68块！十只活虾！",
+            "shot_list": {...},         # 来自脚本Agent的分镜
+            "hook_strategy": {...},     # 钩子策略
+            "retention_timeline": [...], # 留存时间线
+        }, audio_files=["口播.mp4"], video_files=["产品.mp4"])
+
+    传统模式(仅脚本文字):
+        result = clip_this("68块！十只活虾！", "团购售卖",
+            audio=["口播.mp4"], video=["产品.mp4"])
 
     Args:
-        script_text: 脚本文案
+        script_text: 脚本文案(传统模式)
         script_type: 老板IP/团购售卖/引流进店
+        script_output: 脚本Agent完整输出(桥接模式·优先)
         audio_files: 音频/口播文件列表(按句子顺序)
         video_files: 视频/画面文件列表(按句子顺序)
         output_dir: 输出目录
@@ -66,6 +81,30 @@ def clip_this(
     t0 = time.time()
     warnings = []
 
+    # 🆕 桥接模式: Tab1脚本输出直接驱动剪辑
+    if script_output:
+        from .script_clip_bridge import bridge_script_to_clip, apply_bridge_to_job
+        bridge = bridge_script_to_clip(script_output, audio_files or [], video_files or [], output_dir)
+        job = apply_bridge_to_job(bridge, audio_files or [], video_files or [])
+        from .execution_engine import ChangyiExecutionEngine
+        engine = ChangyiExecutionEngine()
+        job = engine.execute(job, output_dir, stop_on_error=False)
+        elapsed = time.time() - t0
+        return ClipResult(
+            success=job.status == "done",
+            script_type=bridge.script_type,
+            sentence_count=len(job.sentences),
+            total_duration=sum(s.duration_sec for s in job.sentences),
+            editing_cuts=len(job.edit_decisions.get("cuts", [])),
+            quality_score=job.quality_report.get("score", 0),
+            bgm_genre=bridge.bgm_genre,
+            draft_path=job.draft_path or output_dir,
+            execution_time=round(elapsed, 1),
+            errors=job.errors,
+            warnings=warnings,
+        )
+
+    # 传统模式: 仅脚本文字
     # 构建A/B槽
     audio_slots = {}
     video_slots = {}
