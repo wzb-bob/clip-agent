@@ -63,9 +63,11 @@ from .sentence_editor import (ScriptSentence, parse_script_to_sentences, generat
 from .execution_engine import (ExecutionJob, ChangyiExecutionEngine, quick_execute)
 from .clip_this import clip_this, ClipResult
 
-# ── 脚本→剪辑联通桥(1) ──
+# ── 脚本→剪辑联通桥(1) + 闭环反馈(1) ──
 from .script_clip_bridge import (BridgeConfig, bridge_script_to_clip, apply_bridge_to_job,
     bridge_and_execute, SCRIPT_TO_CLIP_CONFIG)
+from .feedback_loop import (FeedbackReport, FeedbackStore, generate_feedback,
+    get_script_optimization_hints)
 
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)

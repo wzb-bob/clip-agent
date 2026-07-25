@@ -207,7 +207,7 @@ def bridge_and_execute(
     engine = ChangyiExecutionEngine()
     job = engine.execute(job, output_dir, stop_on_error=False)
 
-    return {
+    result = {
         "success": job.status == "done",
         "script_type": bridge.script_type,
         "template": bridge.template_key,
@@ -221,6 +221,35 @@ def bridge_and_execute(
         "bridge_config": job.enhancement_report.get("bridge_config", {}),
         "errors": job.errors,
     }
+
+    # 🆕 闭环反馈: 自动生成+保存
+    try:
+        from .feedback_loop import generate_feedback, FeedbackStore
+        bridge_cfg = {
+            "script_type": bridge.script_type,
+            "script_text": bridge.script_text,
+            "shot_map": bridge.shot_map,
+            "template_key": bridge.template_key,
+            "color_grade": bridge.color_grade,
+            "bgm_genre": bridge.bgm_genre,
+            "editing_style": SCRIPT_TO_CLIP_CONFIG.get(bridge.script_type, {}).get("editing_style", ""),
+        }
+        material_stats = {
+            "total": len(audio_files or []) + len(video_files or []),
+            "talking": len(audio_files or []),
+            "broll": len([f for f in (video_files or []) if "空镜" in f or "环境" in f or "门头" in f]),
+            "quality_avg": 3.5,
+        }
+        report = generate_feedback(bridge_cfg, result, material_stats)
+        FeedbackStore().save(report)
+        result["feedback"] = {
+            "feedback_id": report.feedback_id,
+            "optimization_hints": report.optimization_hints[:3],
+        }
+    except Exception as e:
+        logger.debug("反馈生成跳过: %s", e)
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════
