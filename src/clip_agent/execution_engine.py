@@ -170,6 +170,60 @@ class ChangyiExecutionEngine:
                 except Exception as e:
                     logger.debug("SmartCutter跳过: %s", e)
 
+                # 🆕 音频深度理解: Whisper转录→DeepSeek分析金句/情绪/切点
+                try:
+                    whisper_data = job.enhancement_report.get("whisper", {})
+                    if whisper_data.get("gaps"):
+                        # 构建音频理解数据
+                        transcript_text = " ".join(
+                            f"[{w['start']}s] {w['word']}"
+                            for w in whisper_data.get("word_times", [])[:100]
+                        )
+                        audio_moments = [
+                            {"at_sec": g["at_sec"], "type": "pause" if g.get("is_sentence_break") else "gap",
+                             "gap_ms": g["gap_ms"], "words": g["between"]}
+                            for g in whisper_data.get("gaps", [])[:10]
+                        ]
+                        energy_peaks = [
+                            {"at_sec": g["at_sec"], "energy": 0.8}
+                            for g in whisper_data.get("gaps", []) if g.get("is_sentence_break")
+                        ]
+
+                        from ._imports import chat_via_gateway, get_model_name
+                        if chat_via_gateway:
+
+                            audio_prompt = f"""分析口播音频数据,返回JSON编辑决策。
+
+转录文本(词级): {transcript_text[:800]}
+句间停顿(ms): {json.dumps(audio_moments[:10], ensure_ascii=False)}
+能量峰值: {json.dumps(energy_peaks[:5], ensure_ascii=False)}
+脚本类型: {job.script_type}
+
+JSON格式:
+{{"segments":[{{"start":0.0,"text":"...","emotion":"excited","intensity":9,"broll_at":2.8,"golden":true,"shot":"CU"}}],"emotional_arc":"...","golden_moments":[{{"at_sec":0.5,"reason":"...","effect":"大字弹出+画面缩放"}}]}}
+
+只返回JSON。"""
+
+                            model = get_model_name("deepseek") or "deepseek-v4-flash"
+                            result = chat_via_gateway(
+                                provider="deepseek", model=model,
+                                system="你是音频剪辑导演。基于Whisper数据做编辑决策。只返回JSON。",
+                                user=audio_prompt, temperature=0.1, max_tokens=1500,
+                            )
+                            content = result.get("content", "") if isinstance(result, dict) else str(result)
+                            import re
+                            m = re.search(r'\{.*\}', content, re.DOTALL)
+                            if m:
+                                from .semantic_engine import _repair_json
+                                audio_insights = json.loads(_repair_json(m.group(0)))
+                                job.enhancement_report["audio_understanding"] = audio_insights
+                                logger.info("音频理解: %d段·弧线=%s·金句=%d",
+                                           len(audio_insights.get("segments", [])),
+                                           audio_insights.get("emotional_arc", "")[:40],
+                                           len(audio_insights.get("golden_moments", [])))
+                except Exception as e:
+                    logger.debug("音频理解跳过: %s", e)
+
                 try:
                     sa = SceneAnalyzer()
                     scene_report = sa.analyze(video_path)
@@ -231,13 +285,26 @@ class ChangyiExecutionEngine:
                      "jcut_lcut": [], "pacing": pacing, "smart_cuts": []}
         cur_sec = 0.0
 
-        # 🆕 Whisper句间停顿 → B-roll精准插入点
+        # 🆕 音频深度理解 → B-roll精准插入点(优先)
+        audio_understanding = job.enhancement_report.get("audio_understanding", {})
+        if audio_understanding:
+            decisions["audio_segments"] = audio_understanding.get("segments", [])
+            decisions["emotional_arc"] = audio_understanding.get("emotional_arc", "")
+            # 使用AI理解的broll_at时间点
+            ai_broll_points = [
+                {"at_sec": s.get("broll_at", s["start"]), "text": s.get("text", ""),
+                 "emotion": s.get("emotion", ""), "golden": s.get("golden", False)}
+                for s in audio_understanding.get("segments", []) if s.get("broll_at")
+            ]
+            decisions["whisper_broll_points"] = ai_broll_points or []
+
+        # Whisper句间停顿(降级)
         whisper_gaps = job.enhancement_report.get("whisper", {}).get("gaps", [])
-        whisper_broll_points = [
-            {"at_sec": g["at_sec"], "gap_ms": g["gap_ms"], "words": g["between"]}
-            for g in whisper_gaps if g.get("is_sentence_break")
-        ]
-        decisions["whisper_broll_points"] = whisper_broll_points
+        if not decisions.get("whisper_broll_points"):
+            decisions["whisper_broll_points"] = [
+                {"at_sec": g["at_sec"], "gap_ms": g["gap_ms"], "words": g["between"]}
+                for g in whisper_gaps if g.get("is_sentence_break")
+            ]
 
         # SmartCutter检测到的切点(降级)
         smart_cuts = job.enhancement_report.get("cuts", {}).get("points", [])
