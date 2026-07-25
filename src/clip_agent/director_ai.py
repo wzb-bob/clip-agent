@@ -317,6 +317,24 @@ def direct(
         whisper_gaps, video_scenes, editing_rules,
     )
 
+    # Step 1.5: 查询历史反馈 → 调参优化
+    feedback_context = ""
+    try:
+        from .feedback_loop import get_script_optimization_hints
+        hints = get_script_optimization_hints(script_type, limit=10)
+        if hints.get("has_data"):
+            stats = hints.get("stats", {})
+            top = hints.get("top_hints", [])[:3]
+            feedback_context = (
+                f"历史数据({stats.get('count',0)}条): "
+                f"成功率{stats.get('success_rate',0)}%·"
+                f"平均质量{stats.get('avg_quality_score',0)}分·"
+                f"覆盖{stats.get('avg_shot_coverage',0)}%·"
+                + " | ".join(h.get("hint", "")[:40] for h in top)
+            )
+    except Exception:
+        pass
+
     # Step 2: AI导演 (DeepSeek综合判断)
     if use_ai:
         sem_summary = json.dumps([
@@ -328,6 +346,10 @@ def direct(
         rules_summary = json.dumps([
             {"role": s.segment_role, "shot": s.shot_type} for s in fused.segments[:6]
         ], ensure_ascii=False)
+
+        # Inject feedback context into prompt
+        if feedback_context:
+            rules_summary = f"[反馈]{feedback_context} | [规则]{rules_summary}"
 
         ai_plan = ai_director_decision(
             script_type, sem_summary, audio_summary, video_summary, rules_summary,
