@@ -580,29 +580,49 @@ JSON格式:
                     except Exception as e:
                         logger.debug("音频理解跳过: %s", e)
 
-        # 1c. 视频分析 (有素材时 — OpenCV本地, 零API)
+        # 1c. 视频分析 (Kimi Vision优先→OpenCV降级)
         video_slots = job.video_slots or {}
         for idx, path in video_slots.items():
             if os.path.exists(path):
+                scene_desc = None
+                engine = "opencv"
+
+                # 🆕 Kimi Vision 场景理解 (关键帧→画面描述)
                 try:
-                    from .local_video_analyzer import quick_analyze
-                    va = quick_analyze(path)
-                    if "error" not in va:
-                        video_scenes.append({
-                            "at_sec": 0, "file": va.get("file", ""),
-                            "description": f"{va.get('inferred_type','')}·{va.get('quality','')}·{va.get('motion','')}",
-                            "has_face": va.get("has_face", False),
-                            "face_pct": va.get("face_coverage_pct", 0),
-                            "scene_count": va.get("scene_count", 1),
-                            "recommendation": va.get("recommendation", ""),
-                        })
-                        job.enhancement_report["video"] = {
-                            "analyzed": len(video_scenes),
-                            "scenes": video_scenes,
-                        }
-                    break  # 分析一个代表性素材即可
+                    if os.getenv("KIMI_API_KEY"):
+                        from .kimi_scene_analyzer import analyze_video_scenes
+                        kimi_scenes = analyze_video_scenes(path, frame_count=2)
+                        if kimi_scenes:
+                            desc_parts = [f"@{s.at_sec:.0f}s:{s.description[:40]}" for s in kimi_scenes]
+                            scene_desc = f"Kimi: {' | '.join(desc_parts)}"
+                            engine = "kimi_vision"
                 except Exception as e:
-                    logger.debug("视频分析跳过: %s", e)
+                    logger.debug("Kimi Vision跳过: %s", e)
+
+                # OpenCV降级
+                if not scene_desc:
+                    try:
+                        from .local_video_analyzer import quick_analyze
+                        va = quick_analyze(path)
+                        if "error" not in va:
+                            scene_desc = (
+                                f"OpenCV: {va.get('inferred_type','')}·{va.get('quality','')}·"
+                                f"{va.get('motion','')}·face={va.get('face_coverage_pct',0)}%"
+                            )
+                    except Exception as e:
+                        logger.debug("OpenCV分析跳过: %s", e)
+
+                if scene_desc:
+                    video_scenes.append({
+                        "at_sec": 0, "file": Path(path).name,
+                        "description": scene_desc, "engine": engine,
+                    })
+                    job.enhancement_report["video"] = {
+                        "analyzed": len(video_scenes),
+                        "engine": engine,
+                        "scenes": video_scenes,
+                    }
+                break  # 分析一个代表性素材即可
 
         if on_progress:
             on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")

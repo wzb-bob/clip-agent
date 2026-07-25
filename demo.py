@@ -12,20 +12,21 @@
 import sys, os, time, argparse, json
 from pathlib import Path
 
-# Auto-load .env for API keys
-_env_paths = [
-    Path(r"c:\Users\wangzibo\enterprise-agent-content\.env"),
-    Path(r"c:\Users\wangzibo\enterprise-agent-content\acquisition-backend\.env"),
-    Path(__file__).parent / ".env",
-]
-for _ep in _env_paths:
-    if _ep.exists():
-        try:
-            from dotenv import load_dotenv
+# Auto-load .env for API keys (must happen before any clip_agent imports)
+try:
+    from dotenv import load_dotenv
+    # Try multiple locations
+    for _ep in [
+        Path(r"c:\Users\wangzibo\enterprise-agent-content\.env"),
+        Path(r"c:\Users\wangzibo\enterprise-agent-content\acquisition-backend\.env"),
+    ]:
+        if _ep.exists():
             load_dotenv(_ep)
             break
-        except ImportError:
-            pass
+    else:
+        load_dotenv()  # fallback: current dir
+except ImportError:
+    pass
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -84,21 +85,38 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
             for s in kw.segments
         ]
 
-    # Step 2: 视频分析(有素材时)
+    # Step 2: 视频分析(Kimi Vision→OpenCV降级)
     video_scenes = []
     if video_files:
         print(f"🔬 Step 2/4: 视频分析({len(video_files)}个素材)...")
         for vf in video_files[:3]:
-            if os.path.exists(vf):
+            if not os.path.exists(vf):
+                continue
+            # 🆕 Kimi Vision 场景理解
+            desc = None
+            engine = "opencv"
+            try:
+                from clip_agent.kimi_scene_analyzer import analyze_video_scenes
+                kimi_scenes = analyze_video_scenes(vf, frame_count=2)
+                if kimi_scenes:
+                    desc_parts = [f"@{s.at_sec:.0f}s:{s.description[:50]}" for s in kimi_scenes]
+                    desc = f"Kimi: {' | '.join(desc_parts)}"
+                    engine = "kimi"
+                    print(f"   🤖 {Path(vf).name}: {desc[:100]}")
+            except Exception:
+                pass
+            # OpenCV 降级
+            if not desc:
                 try:
                     from clip_agent.local_video_analyzer import quick_analyze
                     va = quick_analyze(vf)
                     if "error" not in va:
-                        video_scenes.append(va)
-                        print(f"   📹 {va['file']}: {va['inferred_type']}·{va['quality']}·{va['motion']}")
+                        desc = f"{va['inferred_type']}·{va['quality']}·{va['motion']}"
+                        print(f"   📹 {va['file']}: {desc}")
                 except Exception as e:
                     print(f"   ⚠️ {vf}: {e}")
-    else:
+            if desc:
+                video_scenes.append({"at_sec": 0, "file": Path(vf).name, "description": desc, "engine": engine})
         print("🔬 Step 2/4: 视频分析(无素材,跳过)")
         # 用生成测试素材
         print("   💡 提示: 用 --video 传入真实素材获得更好效果")
