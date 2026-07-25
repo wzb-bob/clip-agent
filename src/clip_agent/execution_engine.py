@@ -580,6 +580,30 @@ JSON格式:
                     except Exception as e:
                         logger.debug("音频理解跳过: %s", e)
 
+        # 1c. 视频分析 (有素材时 — OpenCV本地, 零API)
+        video_slots = job.video_slots or {}
+        for idx, path in video_slots.items():
+            if os.path.exists(path):
+                try:
+                    from .local_video_analyzer import quick_analyze
+                    va = quick_analyze(path)
+                    if "error" not in va:
+                        video_scenes.append({
+                            "at_sec": 0, "file": va.get("file", ""),
+                            "description": f"{va.get('inferred_type','')}·{va.get('quality','')}·{va.get('motion','')}",
+                            "has_face": va.get("has_face", False),
+                            "face_pct": va.get("face_coverage_pct", 0),
+                            "scene_count": va.get("scene_count", 1),
+                            "recommendation": va.get("recommendation", ""),
+                        })
+                        job.enhancement_report["video"] = {
+                            "analyzed": len(video_scenes),
+                            "scenes": video_scenes,
+                        }
+                    break  # 分析一个代表性素材即可
+                except Exception as e:
+                    logger.debug("视频分析跳过: %s", e)
+
         if on_progress:
             on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")
 
