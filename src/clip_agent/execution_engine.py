@@ -668,6 +668,24 @@ JSON格式:
                 }
                 break
 
+        # 1d. 视觉-语义对齐 (Kimi/GLM视频描述 → 脚本内容匹配)
+        alignment = None
+        if video_scenes and semantic_segments:
+            try:
+                from .visual_semantic_aligner import align_script_to_video
+                alignment = align_script_to_video(semantic_segments, video_scenes, job.script_type)
+                if alignment:
+                    job.enhancement_report["alignment"] = {
+                        "confidence": alignment.overall_confidence,
+                        "matched": len(alignment.segments),
+                        "unmatched": len(alignment.unmatched_scripts),
+                    }
+                    logger.info("视觉语义对齐: %.0f%%置信·%d匹配·%d未匹配",
+                               alignment.overall_confidence*100,
+                               len(alignment.segments), len(alignment.unmatched_scripts))
+            except Exception as e:
+                logger.debug("对齐跳过: %s", e)
+
         if on_progress:
             on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")
 
