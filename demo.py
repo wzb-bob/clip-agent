@@ -80,6 +80,12 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
         print(f"   ⚠️: {job.errors[:2]}")
     if job.status == "done" or job.draft_path:
         print(f"\n✅ 输出: {os.path.abspath(output_dir)}")
+        # 决策摘要
+        print(f"\n🎬 导演决策摘要:")
+        for s in job.sentences[:8]:
+            b = "🎬B-roll" if s.is_broll else "🎤口播"
+            ov = f" [{s.text_overlay}]" if s.text_overlay else ""
+            print(f"  {b} {s.start_sec:5.1f}s {s.required_shot:3s} {s.text[:20]:20s}{ov}")
 
 
 def demo_compare(script_text, script_type):
