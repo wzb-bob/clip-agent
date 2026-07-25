@@ -370,13 +370,22 @@ def direct(
         whisper_gaps, video_scenes, editing_rules,
     )
 
-    # Step 1.5: 查询历史反馈 → 调参优化
+    # Step 1.5: 查询历史反馈+偏好 → 调参优化
     feedback_context = ""
     try:
-        from .feedback_loop import get_script_optimization_hints
+        from .feedback_loop import get_script_optimization_hints, get_preferred_params
+        prefs = get_preferred_params(script_type)
+        if prefs.get("count", 0) > 0:
+            top_template = max(prefs.get("templates", {}), key=prefs["templates"].get, default="")
+            top_color = max(prefs.get("colors", {}), key=prefs["colors"].get, default="")
+            top_bgm = max(prefs.get("bgms", {}), key=prefs["bgms"].get, default="")
+            feedback_context = (
+                f"偏好({prefs['count']}次): 模板={top_template} 色={top_color} BGM={top_bgm} "
+                f"均质={prefs.get('avg_quality',0)}分"
+            )
+
         hints = get_script_optimization_hints(script_type, limit=10)
         if hints.get("has_data"):
-            stats = hints.get("stats", {})
             top = hints.get("top_hints", [])[:3]
             feedback_context = (
                 f"历史数据({stats.get('count',0)}条): "

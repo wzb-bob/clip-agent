@@ -222,9 +222,15 @@ def bridge_and_execute(
         "errors": job.errors,
     }
 
-    # 🆕 闭环反馈: 自动生成+保存
+    # 🆕 闭环反馈: 自动生成+保存+学习
     try:
-        from .feedback_loop import generate_feedback, FeedbackStore
+        from .feedback_loop import generate_feedback, FeedbackStore, learn_from_success
+        if result["success"] and result.get("quality_score", 0) >= 6:
+            learn_from_success(
+                bridge.script_type, bridge.template_key,
+                bridge.color_grade, bridge.bgm_genre,
+                result["quality_score"],
+            )
         bridge_cfg = {
             "script_type": bridge.script_type,
             "script_text": bridge.script_text,

@@ -292,6 +292,42 @@ def _generate_optimization_hints(
     return hints
 
 
+def learn_from_success(script_type: str, template: str, color: str, bgm: str, quality: float):
+    """记录一次成功的剪辑参数选择 → 下次自动偏好"""
+    store = FeedbackStore()
+    store.file_path.parent.mkdir(parents=True, exist_ok=True)
+    pref_file = store.file_path.parent / "preferences.json"
+    prefs = {}
+    if pref_file.exists():
+        try:
+            prefs = json.loads(pref_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    key = script_type
+    if key not in prefs:
+        prefs[key] = {"templates": {}, "colors": {}, "bgms": {}, "count": 0}
+    p = prefs[key]
+    p["count"] += 1
+    p["templates"][template] = p["templates"].get(template, 0) + 1
+    p["colors"][color] = p["colors"].get(color, 0) + 1
+    p["bgms"][bgm] = p["bgms"].get(bgm, 0) + 1
+    p["avg_quality"] = round((p.get("avg_quality", quality) * (p["count"] - 1) + quality) / p["count"], 1)
+    pref_file.write_text(json.dumps(prefs, ensure_ascii=False, indent=2))
+
+
+def get_preferred_params(script_type: str) -> dict:
+    """查询某脚本类型的历史偏好参数"""
+    store = FeedbackStore()
+    pref_file = store.file_path.parent / "preferences.json"
+    if not pref_file.exists():
+        return {}
+    try:
+        prefs = json.loads(pref_file.read_text(encoding="utf-8"))
+        return prefs.get(script_type, {})
+    except Exception:
+        return {}
+
+
 def get_script_optimization_hints(script_type: str = "", limit: int = 20) -> dict:
     """
     查询历史剪辑反馈, 返回脚本Agent可用的优化建议。
