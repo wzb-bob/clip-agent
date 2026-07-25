@@ -82,6 +82,42 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
         print(f"\n✅ 输出: {os.path.abspath(output_dir)}")
 
 
+def demo_compare(script_text, script_type):
+    """对比模式: 旧关键词 vs 新AI导演"""
+    from clip_agent.semantic_engine import analyze_script_keywords, analyze_script_semantic
+
+    print(f"\n📝 脚本: {script_text[:60]}...")
+    print(f"🎭 类型: {script_type}\n")
+
+    # 旧: 关键词规则
+    old = analyze_script_keywords(script_text, script_type)
+    # 新: AI语义
+    new = analyze_script_semantic(script_text, script_type)
+
+    if not old or not new:
+        print("❌ 分析失败")
+        return
+
+    print(f"{'':5s} {'旧(关键词规则)':40s} {'新(AI语义理解)':40s}")
+    print("-" * 90)
+
+    for i in range(max(len(old.segments), len(new.segments))):
+        os = old.segments[i] if i < len(old.segments) else None
+        ns = new.segments[i] if i < len(new.segments) else None
+        if os and ns:
+            print(f"[{os.text[:12]}]")
+            print(f"{'':5s} role={os.role:15s} I={os.intensity} {os.shot_type:3s} {'':15s} role={ns.role:15s} I={ns.intensity} {ns.shot_type:3s}")
+            print(f"{'':5s} {os.emotion:10s} → '{os.visual_need[:30]}' {'':5s} {ns.emotion:10s} → '{ns.visual_need[:30]}'")
+            print()
+
+    print("-" * 90)
+    print(f"情感弧线:")
+    print(f"  旧: 规则推断(无AI理解)")
+    print(f"  新: {new.emotional_arc}")
+    print(f"\n旧版只看关键词(if '块' in text→产品句)")
+    print(f"新版AI理解整句语义+情感+画面需求")
+
+
 def interactive_mode():
     """交互式引导"""
     print_banner()
@@ -118,9 +154,13 @@ def main():
     parser.add_argument("--audio", nargs="*", default=[], help="音频素材")
     parser.add_argument("--output", default="./demo_output/", help="输出目录")
     parser.add_argument("--interactive", "-i", action="store_true", help="交互式模式")
+    parser.add_argument("--compare", "-c", action="store_true", help="对比模式: 旧关键词 vs 新AI导演")
     args = parser.parse_args()
 
-    if args.interactive or not args.script:
+    if args.compare and args.script:
+        print_banner()
+        demo_compare(args.script, args.type)
+    elif args.interactive or not args.script:
         interactive_mode()
     else:
         print_banner()
