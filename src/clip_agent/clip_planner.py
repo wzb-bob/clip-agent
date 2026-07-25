@@ -29,7 +29,7 @@ class ClipPlan:
     breath_report: any=None; breath_broll_points: list=field(default_factory=list)
 
 def generate_clip_plans(analysis, user_intent="", plan_count=2, provider="", model=""):
-    from app.services.clip_agent.clip_templates import get_template, auto_select_template, VISUAL_STRATEGIES
+    from .clip_templates import get_template, auto_select_template, VISUAL_STRATEGIES
     if not analysis.analyses: raise ValueError("没有可用的素材分析结果")
     template_key = auto_select_template([a.scene_type for a in analysis.analyses], user_intent)
     template = get_template(template_key) or get_template("老板IP")
@@ -84,7 +84,7 @@ def _generate_via_orchestrator(analysis, user_intent="", fast_mode=False):
         plan = _map_edit_result_to_plan(result, analysis, fast_mode)
         if not fast_mode and plan.segments:
             try:
-                from app.services.clip_agent.breath_detector import BreathDetector
+                from .breath_detector import BreathDetector
                 br = BreathDetector().analyze(Path(mv)); plan.breath_report = br
                 if br.best_cuts or br.good_cuts:
                     bpts = BreathDetector().get_optimal_broll_points(br, count=sum(1 for s in plan.segments if s.sub_type=="broll"), min_gap_sec=3.0)
@@ -94,7 +94,7 @@ def _generate_via_orchestrator(analysis, user_intent="", fast_mode=False):
     except Exception as e: logger.exception("引擎异常"); return None
 
 def _map_edit_result_to_plan(result, analysis, fast_mode=False):
-    from app.services.clip_agent.media_analyzer import MaterialAnalysis
+    from .media_analyzer import MaterialAnalysis
     td = analysis.voiceover_duration or 30.0
     od = min(3.5, td*0.1); ed = min(3.5, td*0.1); bd = td-od-ed if td>od+ed else td
     cmds = result.director_commands or []
@@ -118,13 +118,13 @@ def _map_edit_result_to_plan(result, analysis, fast_mode=False):
     bl = result.bgm_recommendations or []
     plan = ClipPlan(plan_id=1, plan_name=f"AI智能剪辑{'(快速版)' if fast_mode else ''}", plan_style=result.director_story or "AI全自动剪辑", template_key="团购售卖", opening_duration=od, body_duration=bd, ending_duration=ed, total_duration=cur if segs else td, visual_strategy=strategy, strategy_reason=f"引擎:{result.shot_count}镜→{result.deep_annotation_count}标注", voiceover_duration=td, voiceover_available=analysis.has_talking_head, bgm_suggestion=bl[0] if bl else "轻快电子", segments=segs, summary=result.director_story or "全自动剪辑", draft_path=result.draft_path, exported_video=result.exported_video, deep_annotation_count=result.deep_annotation_count, shot_count=result.shot_count, review_score=result.review_score, bgm_recommendations=bl)
     if not plan.segments:
-        from app.services.clip_agent.clip_templates import get_template
+        from .clip_templates import get_template
         fb = _fallback_plan(analysis, get_template("团购售卖") or {}, "团购售卖", 1)
         plan.segments = fb.segments; plan.total_duration = fb.total_duration
     return plan
 
 def _fallback_plan(analysis, template, template_key, plan_id, strategy_key=""):
-    from app.services.clip_agent.clip_templates import VISUAL_STRATEGIES
+    from .clip_templates import VISUAL_STRATEGIES
     if not strategy_key: strategy_key = "good_presence" if analysis.has_talking_head else "script_reading"
     strategy = VISUAL_STRATEGIES.get(strategy_key, VISUAL_STRATEGIES["good_presence"])
     dna = template.get("editing_dna", {})

@@ -72,7 +72,7 @@ class BatchClassification:
 
 def classify_video(temp_path: str, filename: str, duration_sec: float = 0.0) -> VideoClassification:
     """对单个视频做多帧分析+分类（使用专用分类prompt）"""
-    from app.services.clip_agent.media_analyzer import _probe_video
+    from .media_analyzer import _probe_video
     from app.services.gateway_client import chat_vision
     from app.services.material_analyzer import MaterialAnalyzer
     import re as _re

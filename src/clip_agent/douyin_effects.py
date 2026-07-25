@@ -192,7 +192,7 @@ def apply_douyin_style_to_plan(plan, audio_path: str = "", template_key: str = "
 
     Returns: 包含所有效果参数的dict,供导出时使用
     """
-    from app.services.clip_agent.clip_templates import get_template
+    from .clip_templates import get_template
 
     template = get_template(template_key) or {}
     dna = template.get("editing_dna", {})

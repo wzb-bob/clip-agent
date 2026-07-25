@@ -262,7 +262,7 @@ def analyze_video_dynamic(
 
     # 内容分段(基于场景变化)
     try:
-        from app.services.clip_agent.open_source_edit import detect_scenes_adaptive
+        from .open_source_edit import detect_scenes_adaptive
         scene_segments = detect_scenes_adaptive(video_path, threshold=30)
     except Exception:
         scene_segments = [{"index":0, "start_sec":0, "end_sec":duration, "duration":duration}]

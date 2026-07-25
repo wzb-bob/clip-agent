@@ -35,7 +35,7 @@ def _pack_draft_dir(dp,od):
     return ExportResult(True,"jianying_draft_dir",zp,zp)
 
 def _export_manual_json(plan, mps, od):
-    from app.services.clip_agent.clip_templates import BGM_RULES
+    from .clip_templates import BGM_RULES
     vs,ims=[],[]
     for i,mp in enumerate(mps):
         if not os.path.exists(mp): continue
@@ -55,7 +55,7 @@ def _export_manual_json(plan, mps, od):
 
 def export_storyboard_text(plan):
     from app.services.shot_director import SHOT_TYPES,CAMERA_MOVEMENTS,COMPOSITIONS,EMOTIONAL_TONES
-    from app.services.clip_agent.clip_templates import VISUAL_STRATEGIES
+    from .clip_templates import VISUAL_STRATEGIES
     s=VISUAL_STRATEGIES.get(plan.visual_strategy); sn=s.label if s else plan.visual_strategy
     lines=[f"══ {plan.plan_name} ══",f"策略: {sn}",f"开头{plan.opening_duration}s→介绍{plan.body_duration}s→结尾{plan.ending_duration}s",f"BGM: {plan.bgm_suggestion} | 音量1/3",""]
     if plan.review_score>0: lines.append(f"Kimi审片: {plan.review_score:.1f}/10")

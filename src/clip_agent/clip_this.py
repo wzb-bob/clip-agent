@@ -2,7 +2,7 @@
 终极一键剪辑 · clip_this() — 脚本+素材→全自动→成片
 
 一行代码完成从脚本到成片的全部流程:
-  from app.services.clip_agent import clip_this
+  from . import clip_this
   result = clip_this("68块！十只活虾！", "团购售卖",
       audio=["口播1.mp4","口播2.mp4"],
       video=["产品1.mp4","空镜.mp4"])

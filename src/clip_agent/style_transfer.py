@@ -106,7 +106,7 @@ def extract_editing_dna(video_path: str) -> EditingDNA | None:
 
         style_data = {}
         if mid_frame:
-            from app.services.clip_agent.media_analyzer import _call_vision_api
+            from .media_analyzer import _call_vision_api
             style_data = _call_vision_api(mid_frame, DNA_ANALYSIS_PROMPT, "参考视频风格分析")
 
         return EditingDNA(

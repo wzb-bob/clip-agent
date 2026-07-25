@@ -160,7 +160,7 @@ def analyze_reference_video(video_path: str) -> dict:
 
     # 场景检测→估算镜头数
     try:
-        from app.services.clip_agent.open_source_edit import detect_scenes_adaptive
+        from .open_source_edit import detect_scenes_adaptive
         scenes = detect_scenes_adaptive(video_path, threshold=30)
         if scenes:
             durations = [s["duration"] for s in scenes]
@@ -172,7 +172,7 @@ def analyze_reference_video(video_path: str) -> dict:
 
     # 风格DNA提取(Kimi K2.6)
     try:
-        from app.services.clip_agent.media_analyzer import _call_vision_api
+        from .media_analyzer import _call_vision_api
         from app.services.material_analyzer import MaterialAnalyzer
         ma = MaterialAnalyzer()
         frame = ma._extract_frame(Path(video_path), ref_dna.get("duration", 10) / 2)
@@ -209,7 +209,7 @@ def clip_factory_pipeline(
     # === Stage 1: Material Analysis ===
     t1 = time.time()
     try:
-        from app.services.clip_agent.media_analyzer import MediaFile, analyze_materials
+        from .media_analyzer import MediaFile, analyze_materials
         mf = MediaFile(filename=os.path.basename(video_path), file_type='video',
                        mime_type='video/mp4', size_bytes=os.path.getsize(video_path), temp_path=video_path)
         batch = analyze_materials([mf], script_text[:200] if script_text else "")
@@ -229,7 +229,7 @@ def clip_factory_pipeline(
     # === Stage 2: Scene Planning ===
     t1 = time.time()
     try:
-        from app.services.clip_agent.sentence_editor import parse_script_to_sentences
+        from .sentence_editor import parse_script_to_sentences
         sentences = parse_script_to_sentences(script_text or "产品展示视频", "团购售卖")
         all_data["sentences"] = len(sentences)
         all_data["total_duration"] = sum(s.duration_sec for s in sentences)
@@ -244,9 +244,9 @@ def clip_factory_pipeline(
     # === Stage 7: Export ===
     t1 = time.time()
     try:
-        from app.services.clip_agent.jianying_export import export_to_jianying_draft, export_storyboard_text
-        from app.services.clip_agent.clip_planner import generate_clip_plans
-        from app.services.clip_agent.media_analyzer import MaterialAnalysis, BatchAnalysisResult
+        from .jianying_export import export_to_jianying_draft, export_storyboard_text
+        from .clip_planner import generate_clip_plans
+        from .media_analyzer import MaterialAnalysis, BatchAnalysisResult
 
         analyses = [MaterialAnalysis(filename=os.path.basename(video_path), file_type='video',
                       scene_type='人物', has_face=True, quality_score=4.0)]

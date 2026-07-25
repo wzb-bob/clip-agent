@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 logger = logging.getLogger(__name__)
 
-from app.services.clip_agent.shotlist_generator import ShotList, ShotSpec
-from app.services.clip_agent.media_analyzer import MediaFile, MaterialAnalysis, _call_vision_api, _probe_video
+from .shotlist_generator import ShotList, ShotSpec
+from .media_analyzer import MediaFile, MaterialAnalysis, _call_vision_api, _probe_video
 
 @dataclass
 class MatchedShot:
@@ -121,13 +121,13 @@ def _analyze_material_for_matching(mf: MediaFile) -> MaterialAnalysis:
         try:
             if mf.file_type == "video":
                 info = _probe_video(mf.temp_path)
-                from app.services.material_analyzer import MaterialAnalyzer
+                from ._imports import _try_import; MaterialAnalyzer = _try_import("app.services.material_analyzer", "MaterialAnalyzer")
                 ma = MaterialAnalyzer()
                 frame = ma._extract_frame(Path(mf.temp_path), info["duration"]/2)
                 if frame:
                     data = _call_vision_api(frame, f"匹配用:{mf.filename}")
                     if data:
-                        from app.services.clip_agent.media_analyzer import _vision_to_analysis
+                        from .media_analyzer import _vision_to_analysis
                         a = _vision_to_analysis(data, mf.filename, mf.file_type)
                         a.duration = info["duration"]
                         return a
@@ -136,7 +136,7 @@ def _analyze_material_for_matching(mf: MediaFile) -> MaterialAnalysis:
                     b64 = base64.b64encode(f.read()).decode()
                 data = _call_vision_api(b64, f"匹配用:{mf.filename}")
                 if data:
-                    from app.services.clip_agent.media_analyzer import _vision_to_analysis
+                    from .media_analyzer import _vision_to_analysis
                     return _vision_to_analysis(data, mf.filename, mf.file_type)
         except Exception as e:
             logger.debug("匹配视觉分析失败(%s): %s", mf.filename, e)
@@ -217,8 +217,8 @@ def _shot_level(shot_type: str) -> int:
 
 def build_clip_plan_from_match(match: MatchResult) -> "ClipPlan":
     """从匹配结果构建完整ClipPlan——自动填充时间线"""
-    from app.services.clip_agent.clip_planner import ClipPlan, VideoSegment
-    from app.services.clip_agent.clip_templates import get_template, auto_select_template
+    from .clip_planner import ClipPlan, VideoSegment
+    from .clip_templates import get_template, auto_select_template
 
     template_key = auto_select_template([], match.shotlist.script_type)
     template = get_template(template_key) or get_template("团购售卖")

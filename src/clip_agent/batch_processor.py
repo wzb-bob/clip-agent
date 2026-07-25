@@ -58,8 +58,8 @@ def run_batch(
             on_progress(job.job_id, "running", (i+1)/len(jobs))
 
         try:
-            from app.services.clip_agent import analyze_and_generate_clip_plan
-            from app.services.clip_agent.media_analyzer import MediaFile
+            from . import analyze_and_generate_clip_plan
+            from .media_analyzer import MediaFile
 
             # 构建UploadedFile模拟
             mock_files = []
@@ -87,7 +87,7 @@ def run_batch(
 
             if result.success and result.plans:
                 # 导出
-                from app.services.clip_agent.jianying_export import export_storyboard_text, export_to_jianying_draft
+                from .jianying_export import export_storyboard_text, export_to_jianying_draft
                 plan = result.plans[0]
                 sb = export_storyboard_text(plan)
                 jy = export_to_jianying_draft(plan, job.material_paths)

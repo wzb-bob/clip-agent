@@ -49,7 +49,7 @@ def analyze_with_precision(
     3. 一致性投票: 多帧结果的一致性→置信度
     4. 自动纠正: 检测到分类矛盾时自动修正
     """
-    from app.services.clip_agent.media_analyzer import _call_vision_api, _probe_video
+    from .media_analyzer import _call_vision_api, _probe_video
     from app.services.material_analyzer import MaterialAnalyzer
     from collections import Counter
 

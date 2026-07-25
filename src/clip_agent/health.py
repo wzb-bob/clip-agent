@@ -93,7 +93,7 @@ def _check_openmontage() -> dict:
 def _check_modules() -> dict:
     t0 = time.time()
     try:
-        from app.services.clip_agent import clip_this, quick_execute
+        from . import clip_this, quick_execute
         return {"healthy": True, "detail": "核心模块导入成功", "latency_ms": round((time.time()-t0)*1000)}
     except Exception as e:
         return {"healthy": False, "detail": str(e)[:100]}
