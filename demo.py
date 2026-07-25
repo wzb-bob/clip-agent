@@ -12,6 +12,21 @@
 import sys, os, time, argparse, json
 from pathlib import Path
 
+# Auto-load .env for API keys
+_env_paths = [
+    Path(r"c:\Users\wangzibo\enterprise-agent-content\.env"),
+    Path(r"c:\Users\wangzibo\enterprise-agent-content\acquisition-backend\.env"),
+    Path(__file__).parent / ".env",
+]
+for _ep in _env_paths:
+    if _ep.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(_ep)
+            break
+        except ImportError:
+            pass
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
