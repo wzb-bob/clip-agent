@@ -128,13 +128,16 @@ def render_professional(job: RenderJob) -> RenderResult:
         eq_filter = COLOR_PRESETS.get(color_grade, COLOR_PRESETS["neutral"])
 
         tmp = tempfile.mktemp(suffix=f"_seg{i}.mp4")
-        # Lanczos缩放 + 自动填充竖屏 + 调色 + 锐化
-        vf_parts = [
-            f"scale={job.width}:{job.height}:force_original_aspect_ratio=decrease:flags=lanczos",
-            f"pad={job.width}:{job.height}:(ow-iw)/2:(oh-ih)/2:color=black",
-            eq_filter,
-            "unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5",
-        ]
+        # 专业竖屏处理: 模糊背景填充(Douyin风格) + Lanczos缩放 + 调色 + 锐化
+        vf_blur_bg = (
+            f"split[bg][fg];"
+            f"[bg]scale={job.width}:{job.height}:force_original_aspect_ratio=increase,"
+            f"crop={job.width}:{job.height},boxblur=20:10[bg_blur];"
+            f"[fg]scale={job.width}:{job.height}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];"
+            f"[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2,"
+            f"{eq_filter},"
+            f"unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5"
+        )
 
         # 检查是否有音频轨 → 加loudnorm归一化
         has_audio = _probe_has_audio(fp)
@@ -144,7 +147,7 @@ def render_professional(job: RenderJob) -> RenderResult:
             cmd = [
                 "ffmpeg","-y","-hide_banner","-loglevel","error",
                 "-i", fp, "-t", str(dur),
-                "-vf", ",".join(vf_parts),
+                "-vf", vf_blur_bg,
                 "-c:v","libx264","-preset","fast","-crf","18",
             ]
             if af_parts:
