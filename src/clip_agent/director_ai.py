@@ -68,6 +68,59 @@ class DirectorPlan:
 
 
 # ══════════════════════════════════════════════════════════
+# 帧级精度工具
+# ══════════════════════════════════════════════════════════
+
+def snap_to_frame(sec: float, fps: int = 30) -> float:
+    """将秒值精确对齐到最近帧边界 (±16ms@30fps)"""
+    frame = round(sec * fps)
+    return frame / fps
+
+
+def refine_with_whisper(segments: list[dict], whisper_gaps: list[dict],
+                        fps: int = 30) -> list[dict]:
+    """
+    用Whisper词级时间戳(±50ms)精炼每段的时间边界。
+
+    输入: 导演决策的段(按秒估算)
+    输出: 帧级精确的段(对齐到最近Whisper停顿点+帧边界)
+    """
+    if not whisper_gaps:
+        return segments
+
+    refined = []
+    for seg in segments:
+        d = dict(seg)  # Don't mutate original
+        start = seg.get("start_sec", seg.get("start", 0))
+        dur = seg.get("duration_sec", seg.get("duration", 3.0))
+        end = start + dur
+
+        # 找最近的自然停顿点(±0.3s内)
+        best_gap = None
+        for g in whisper_gaps:
+            gap_at = g.get("at_sec", 0)
+            if abs(gap_at - end) < 0.3:
+                if best_gap is None or abs(gap_at - end) < abs(best_gap.get("at_sec", 0) - end):
+                    best_gap = g
+
+        if best_gap:
+            # 在自然停顿+2帧处切(让观众有吸收的时间)
+            gap_at = best_gap.get("at_sec", end)
+            new_dur = snap_to_frame(gap_at - start + 2/fps, fps)
+            d["duration_sec"] = new_dur
+            d["duration"] = new_dur
+            if best_gap.get("gap_ms", 0) >= 500:
+                d["transition_out"] = "dissolve"  # 大停顿用溶解转场
+
+        d["start_sec"] = snap_to_frame(start, fps)
+        if "duration" not in d:
+            d["duration"] = snap_to_frame(d.get("duration_sec", dur), fps)
+        refined.append(d)
+
+    return refined
+
+
+# ══════════════════════════════════════════════════════════
 # 信号融合引擎: 从多个来源聚合信息
 # ══════════════════════════════════════════════════════════
 
@@ -382,6 +435,23 @@ def direct(
             fused.emotional_arc = ai_plan.get("arc", ai_plan.get("emotional_arc", fused.emotional_arc))
             fused.color_grade = ai_plan.get("color", ai_plan.get("color_grade", "neutral"))
             fused.bgm_recommendation = ai_plan.get("bgm", "")
+
+    # Step 3: 帧级精炼 (Whisper词边界+帧对齐)
+    if whisper_gaps and fused.segments:
+        seg_dicts = [
+            {"start_sec": s.start_sec, "duration_sec": s.duration_sec,
+             "start": s.start_sec, "duration": s.duration_sec}
+            for s in fused.segments
+        ]
+        refined = refine_with_whisper(seg_dicts, whisper_gaps, fps=30)
+        for i, s in enumerate(fused.segments):
+            if i < len(refined):
+                r = refined[i]
+                s.start_sec = r.get("start_sec", s.start_sec)
+                s.duration_sec = r.get("duration_sec", s.duration_sec)
+                if r.get("transition_out") == "dissolve":
+                    s.transition_out = "dissolve"
+        logger.debug("帧级精炼: %d段→Whisper对齐+帧边界", len(fused.segments))
 
     return fused
 
