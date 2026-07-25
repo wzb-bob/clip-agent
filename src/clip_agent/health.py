@@ -34,8 +34,16 @@ def check_all() -> dict:
     results["openmontage"] = _check_openmontage()
     # Modules
     results["modules"] = _check_modules()
+    # AI Services
+    results["ai_services"] = _check_ai_services()
 
-    healthy = all(v["healthy"] if isinstance(v, dict) else v for v in results.values())
+    # Flatten AI services for overall health
+    all_checks = dict(results)
+    ai = all_checks.pop("ai_services", {})
+    healthy = all(
+        (v["healthy"] if isinstance(v, dict) else v)
+        for v in list(all_checks.values()) + list(ai.values())
+    )
     return {"healthy": healthy, "checks": results, "timestamp": time.time()}
 
 
@@ -93,24 +101,91 @@ def _check_openmontage() -> dict:
 def _check_modules() -> dict:
     t0 = time.time()
     try:
-        from . import clip_this, quick_execute
-        return {"healthy": True, "detail": "核心模块导入成功", "latency_ms": round((time.time()-t0)*1000)}
+        from . import clip_this, quick_execute, quick_direct
+        return {"healthy": True, "detail": "核心模块导入成功(quick_execute+quick_direct)", "latency_ms": round((time.time()-t0)*1000)}
     except Exception as e:
         return {"healthy": False, "detail": str(e)[:100]}
+
+
+def _check_ai_services() -> dict:
+    """检查AI服务可用性(DeepSeek/Kimi/GLM/Whisper)"""
+    results = {}
+
+    # DeepSeek
+    try:
+        from ._imports import chat_via_gateway, get_model_name
+        if chat_via_gateway and get_model_name:
+            results["deepseek"] = {"healthy": True, "detail": "语义分析+音频理解+导演AI可用"}
+        else:
+            results["deepseek"] = {"healthy": False, "detail": "gateway_client不可用·AI功能降级为规则"}
+    except Exception as e:
+        results["deepseek"] = {"healthy": False, "detail": str(e)[:80]}
+
+    # Kimi Vision
+    try:
+        from ._imports import chat_vision
+        if chat_vision:
+            results["kimi_vision"] = {"healthy": True, "detail": "视觉场景分析可用"}
+        else:
+            results["kimi_vision"] = {"healthy": False, "detail": "API Key未配置·视觉分析不可用"}
+    except Exception:
+        results["kimi_vision"] = {"healthy": False, "detail": "不可用"}
+
+    # GLM-4V
+    key = os.getenv("GLM_API_KEY")
+    results["glm4v"] = {"healthy": bool(key), "detail": "帧级深标注可用" if key else "API Key未配置"}
+
+    # Whisper
+    try:
+        import whisper
+        results["whisper"] = {"healthy": True, "detail": "本地Whisper转录可用"}
+    except ImportError:
+        results["whisper"] = {"healthy": False, "detail": "未安装"}
+    except Exception:
+        results["whisper"] = {"healthy": True, "detail": "可用(需下载模型)"}
+
+    # OpenCV
+    try:
+        import cv2
+        results["opencv"] = {"healthy": True, "detail": f"本地视频分析可用 v{cv2.__version__}"}
+    except ImportError:
+        results["opencv"] = {"healthy": False, "detail": "未安装"}
+
+    # librosa
+    try:
+        import librosa
+        results["librosa"] = {"healthy": True, "detail": "音频能量分析可用"}
+    except ImportError:
+        results["librosa"] = {"healthy": False, "detail": "未安装"}
+
+    return results
 
 
 def print_health_report():
     """打印健康报告"""
     result = check_all()
-    print("=" * 50)
-    print("🩺 长益剪辑Agent 健康检查")
-    print("=" * 50)
-    for name, check in result["checks"].items():
-        icon = "✅" if check["healthy"] else "❌"
-        latency = f" ({check.get('latency_ms',0)}ms)" if check.get('latency_ms') else ""
-        print(f"  {icon} {name}: {check['detail']}{latency}")
-    print("=" * 50)
-    print(f"  {'✅ 系统健康' if result['healthy'] else '❌ 有问题需要修复'}")
+    print("=" * 60)
+    print("🩺 长益剪辑Agent 系统诊断")
+    print("=" * 60)
+    print("  【基础设施】")
+    for name in ["ffmpeg", "python_deps", "disk", "modules"]:
+        check = result["checks"].get(name)
+        if check:
+            icon = "✅" if check["healthy"] else "❌"
+            print(f"  {icon} {name}: {check['detail']}")
+    print("  【AI服务】")
+    ai = result["checks"].get("ai_services", {})
+    for name in ["deepseek", "kimi_vision", "glm4v", "whisper", "opencv", "librosa"]:
+        check = ai.get(name)
+        if check:
+            icon = "✅" if check["healthy"] else "⚠️"
+            print(f"  {icon} {name}: {check['detail']}")
+    print("  【API密钥】")
+    print(f"  {result['checks']['api_keys']['detail']}")
+    print("=" * 60)
+    overall = "✅ 系统就绪" if result["healthy"] else "⚠️ 部分功能受限(见上方⚠️项)"
+    print(f"  {overall}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
