@@ -111,16 +111,52 @@ class ChangyiExecutionEngine:
         logger.info("A/B槽: A=%d/%d B=%d/%d", a_ok, len(job.sentences), v_ok, len(job.sentences))
         return job
 
-    # ===== Stage 2.5: 预检(深度技能) =====
+    # ===== Stage 2.5: 预检(Whisper词级时间戳 + SmartCutter) =====
     def run_preflight(self, job: ExecutionJob) -> ExecutionJob:
-        """预检: SilenceCutter静音分析 + SceneAnalyzer场景分析"""
+        """预检: Whisper词级对齐(精准切点) + SmartCutter静音分析"""
         job.status = "preflight"
 
-        # 找第一个有音频的口播素材做分析
         talking_slots = [s for s in job.sentences if s.audio_status == "uploaded"]
         if talking_slots:
             video_path = talking_slots[0].audio_file
             if os.path.exists(video_path):
+                # 🆕 Whisper词级时间戳 — 精准切点
+                try:
+                    import whisper
+                    model = whisper.load_model("tiny")  # tiny=最快, ~1GB
+                    result = model.transcribe(video_path, word_timestamps=True)
+                    word_times = []
+                    for seg in result.get("segments", []):
+                        for w in seg.get("words", []):
+                            word_times.append({
+                                "word": w.get("word", "").strip(),
+                                "start": round(w.get("start", 0), 2),
+                                "end": round(w.get("end", 0), 2),
+                            })
+                    # 句间停顿检测(>400ms gap = sentence break)
+                    gaps = []
+                    for i in range(1, len(word_times)):
+                        gap_ms = int((word_times[i]["start"] - word_times[i-1]["end"]) * 1000)
+                        if gap_ms >= 300:
+                            gaps.append({
+                                "between": f'{word_times[i-1]["word"]}→{word_times[i]["word"]}',
+                                "at_sec": round(word_times[i-1]["end"] + gap_ms/2000, 2),
+                                "gap_ms": gap_ms,
+                                "is_sentence_break": gap_ms >= 500,
+                            })
+                    job.enhancement_report["whisper"] = {
+                        "total_words": len(word_times),
+                        "sentence_breaks": len([g for g in gaps if g["is_sentence_break"]]),
+                        "gaps": gaps,
+                        "word_times": word_times[:50],  # first 50 words for reference
+                    }
+                    logger.info("Whisper: %d词·%d句间断·%d停顿",
+                               len(word_times), len(gaps),
+                               len([g for g in gaps if g["is_sentence_break"]]))
+                except Exception as e:
+                    logger.debug("Whisper跳过: %s", e)
+
+                # SmartCutter静音分析(降级方案)
                 try:
                     from .smart_cutter import SmartCutter
                     sc = SmartCutter()
@@ -132,7 +168,7 @@ class ChangyiExecutionEngine:
                         "points": [{"at": c.at_sec, "type": c.type, "detail": c.detail} for c in cut_points],
                     }
                 except Exception as e:
-                    logger.debug("SilenceCutter跳过: %s", e)
+                    logger.debug("SmartCutter跳过: %s", e)
 
                 try:
                     sa = SceneAnalyzer()
@@ -195,7 +231,15 @@ class ChangyiExecutionEngine:
                      "jcut_lcut": [], "pacing": pacing, "smart_cuts": []}
         cur_sec = 0.0
 
-        # 注入SmartCutter检测到的切点
+        # 🆕 Whisper句间停顿 → B-roll精准插入点
+        whisper_gaps = job.enhancement_report.get("whisper", {}).get("gaps", [])
+        whisper_broll_points = [
+            {"at_sec": g["at_sec"], "gap_ms": g["gap_ms"], "words": g["between"]}
+            for g in whisper_gaps if g.get("is_sentence_break")
+        ]
+        decisions["whisper_broll_points"] = whisper_broll_points
+
+        # SmartCutter检测到的切点(降级)
         smart_cuts = job.enhancement_report.get("cuts", {}).get("points", [])
         broll_times = [c["at"] for c in smart_cuts if c.get("type") == "broll_insert"]
         hard_cut_times = [c["at"] for c in smart_cuts if c.get("type") == "hard_cut"]
