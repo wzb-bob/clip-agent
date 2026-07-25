@@ -88,7 +88,7 @@ def understand_audio(video_path: str) -> dict:
     # 1. Whisper转录 (词级时间戳)
     try:
         import whisper
-        model = whisper.load_model("tiny")
+        model = whisper.load_model("base")
         whisper_result = model.transcribe(str(vp), word_timestamps=True)
 
         result["transcript"] = whisper_result.get("text", "").strip()
