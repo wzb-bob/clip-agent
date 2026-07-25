@@ -218,47 +218,19 @@ def fuse_signals(
 # AI导演: DeepSeek做最终决策
 # ══════════════════════════════════════════════════════════
 
-DIRECTOR_PROMPT = """你是短视频剪辑总导演。下面汇集了多个AI分析模块的结果,请做最终决策。
+DIRECTOR_PROMPT = """你是短视频剪辑总导演。综合所有信号做最终决策。
 
-## 剧本分析(语义引擎)
-{semantic_summary}
+剧本: {semantic_summary}
+音频: {audio_summary}
+视频: {video_summary}
+规则: {rules_summary}
+类型: {script_type}
 
-## 音频分析(Whisper+librosa)
-{audio_summary}
+返回JSON。格式严格:
+{{"style":"快节奏卡点","color":"vivid","bgm":"电子鼓点","arc":"冲击→展示→购买","segs":[{{"t":0,"d":2.8,"s":"CU","b":0,"tx":"68块!"}},{{"t":2.8,"d":5,"s":"MCU","b":1,"tx":"干煸技术"}}]}}
 
-## 视频分析(OpenCV本地)
-{video_summary}
-
-## 编辑规则建议
-{rules_summary}
-
-## 脚本类型: {script_type}
-
-## 任务: 综合所有信号,输出精确到帧的剪辑方案。
-
-JSON格式:
-{{
-  "plan_name": "方案名称",
-  "editing_style": "剪辑风格描述(10字)",
-  "color_grade": "warm|vivid|bright|cool|cinematic",
-  "bgm": "BGM风格推荐",
-  "emotional_arc": "情绪弧线",
-  "segments": [
-    {{
-      "start": 0.0, "duration": 2.8,
-      "script": "原文", "audio_actual": "实际说的",
-      "shot": "CU", "camera": "static",
-      "broll": false, "broll_visual": "",
-      "text": "叠加文字", "text_anim": "scale_up",
-      "audio_action": "keep", "golden": true,
-      "transition": "dissolve",
-      "reason": "决策理由(10字)"
-    }}
-  ],
-  "key_insights": ["最重要的3个洞察"]
-}}
-
-只返回JSON。"""
+segs字段说明: t=start_sec, d=duration, s=shot_type(CU/MCU/MS/LS), b=broll(0/1), tx=text_overlay
+只返回JSON。不要markdown。不要换行。"""
 
 
 def ai_director_decision(
@@ -361,35 +333,32 @@ def direct(
             script_type, sem_summary, audio_summary, video_summary, rules_summary,
         )
 
-        if ai_plan and ai_plan.get("segments"):
-            # AI导演覆盖信号融合结果
+        if ai_plan and (ai_plan.get("segs") or ai_plan.get("segments")):
+            segs = ai_plan.get("segs") or ai_plan.get("segments", [])
             fused.segments = []
-            for s in ai_plan.get("segments", []):
+            for s in segs:
                 fused.segments.append(DirectorDecision(
-                    start_sec=s.get("start", 0),
-                    duration_sec=s.get("duration", 3.0),
-                    script_text=s.get("script", ""),
-                    audio_text=s.get("audio_actual", ""),
+                    start_sec=s.get("t", s.get("start", 0)),
+                    duration_sec=s.get("d", s.get("duration", 3.0)),
+                    script_text=s.get("tx", s.get("script", s.get("text", ""))),
                     segment_role="body",
-                    shot_type=s.get("shot", "MS"),
-                    camera_move=s.get("camera", "static"),
-                    is_broll=s.get("broll", False),
-                    broll_visual=s.get("broll_visual", ""),
+                    shot_type=s.get("s", s.get("shot", "MS")),
+                    is_broll=bool(s.get("b", s.get("broll", 0))),
+                    broll_visual="",
                     visual_source="ai_director",
-                    text_overlay=s.get("text", ""),
-                    text_animation=s.get("text_anim", "fade_in"),
+                    text_overlay=s.get("tx", s.get("text", "")),
+                    text_animation="scale_up",
                     text_position="center",
-                    audio_action=s.get("audio_action", "keep"),
-                    is_golden_moment=s.get("golden", False),
+                    audio_action="keep",
+                    is_golden_moment=(s.get("t", 99) < 0.5),
                     emphasis_effect="AI导演标注",
-                    transition_in="cut",
-                    transition_out=s.get("transition", "cut"),
+                    transition_out="dissolve" if bool(s.get("b", 0)) else "cut",
                     confidence=0.9,
-                    decision_basis=s.get("reason", "AI综合判断"),
+                    decision_basis="AI综合判断",
                 ))
-            fused.editing_style = ai_plan.get("editing_style", "")
-            fused.emotional_arc = ai_plan.get("emotional_arc", fused.emotional_arc)
-            fused.color_grade = ai_plan.get("color_grade", "neutral")
+            fused.editing_style = ai_plan.get("style", ai_plan.get("editing_style", ""))
+            fused.emotional_arc = ai_plan.get("arc", ai_plan.get("emotional_arc", fused.emotional_arc))
+            fused.color_grade = ai_plan.get("color", ai_plan.get("color_grade", "neutral"))
             fused.bgm_recommendation = ai_plan.get("bgm", "")
 
     return fused
