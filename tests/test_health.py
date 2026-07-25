@@ -38,15 +38,21 @@ class TestCheckAll:
     def test_contains_all_components(self):
         from clip_agent.health import check_all
         result = check_all()
-        expected = {"ffmpeg", "python_deps", "api_keys", "disk", "openmontage", "modules"}
+        expected = {"ffmpeg", "python_deps", "api_keys", "disk", "openmontage", "modules", "ai_services"}
         assert set(result["checks"].keys()) >= expected
 
     def test_each_check_has_required_fields(self):
         from clip_agent.health import check_all
         result = check_all()
         for name, check in result["checks"].items():
-            assert "healthy" in check, f"{name} missing 'healthy'"
-            assert "detail" in check, f"{name} missing 'detail'"
+            if isinstance(check, dict):
+                if "healthy" in check:
+                    assert "detail" in check, f"{name} missing 'detail'"
+                else:
+                    # Nested (ai_services)
+                    for sub in check.values():
+                        assert "healthy" in sub
+                        assert "detail" in sub
 
 
 class TestCheckFfmpeg:
