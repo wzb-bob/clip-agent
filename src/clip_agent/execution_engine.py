@@ -586,13 +586,13 @@ JSON格式:
             if os.path.exists(path):
                 scene_desc = None
                 engine = "none"
+                deep_annotations = []  # 存储详细标注供导演使用
 
-                # 🆕 L1: Kimi K2.6 + GLM-4V 深度视频分析
+                # 🆕 L1: Kimi K2.6 + GLM-4V 并行深度分析
                 try:
                     kimi_ok = bool(os.getenv("KIMI_API_KEY"))
                     glm_ok = bool(os.getenv("GLM_API_KEY"))
                     if kimi_ok or glm_ok:
-                        # Bypass mock layer for real imports
                         for _mk in ["app.services.shot_splitter", "app.services.kimi_video_analyzer",
                                      "app.services.material_analyzer"]:
                             if _mk in sys.modules and "MagicMock" in str(type(sys.modules[_mk])):
@@ -603,32 +603,51 @@ JSON格式:
                             shot_list = [{"start": s.start_sec, "end": s.end_sec, "duration_sec": s.end_sec - s.start_sec}
                                         for s in shots.shots]
 
-                            # Kimi K2.6 跨镜链条分析
-                            if kimi_ok:
-                                import app.services.kimi_video_analyzer as _kva
-                                try:
-                                    kimi_result = _kva.analyze_video_chain(path, shot_list)
-                                    if kimi_result and kimi_result.continuity_score > 0:
-                                        engine = "kimi_k2.6"
-                                        scene_desc = f"K2.6: {kimi_result.continuity_score:.0%}连续·{len(kimi_result.suggestions)}建议"
-                                except Exception:
-                                    pass
+                            # 并行跑: K2.6跨镜链 + GLM-4V逐镜深标注
+                            from concurrent.futures import ThreadPoolExecutor, as_completed
+                            kimi_data, glm_data = None, None
 
-                            # GLM-4V 帧级8维深标注
-                            if glm_ok and not scene_desc:
+                            def _run_kimi():
+                                if not kimi_ok: return None
+                                import app.services.kimi_video_analyzer as _kva
+                                return _kva.analyze_video_chain(path, shot_list)
+
+                            def _run_glm():
+                                if not glm_ok: return None
                                 import app.services.material_analyzer as _ma
-                                try:
-                                    analyzer = _ma.MaterialAnalyzer()
-                                    deep = analyzer.analyze_deep(path, shot_list, max_shots=6)
-                                    if deep:
-                                        dims = []
-                                        for d in deep[:3]:
-                                            dims.append(f"{d.get('scene_type','')}:{d.get('quality_label','')}")
-                                        scene_desc = f"GLM: {len(deep)}镜·{' | '.join(dims)}"
-                                        engine = "glm4v"
-                                        logger.info("GLM-4V: %d镜深标注", len(deep))
-                                except Exception:
-                                    pass
+                                return _ma.MaterialAnalyzer().analyze_deep(path, shot_list, max_shots=8)
+
+                            with ThreadPoolExecutor(max_workers=2) as ex:
+                                futs = {}
+                                if kimi_ok: futs[ex.submit(_run_kimi)] = "kimi"
+                                if glm_ok: futs[ex.submit(_run_glm)] = "glm"
+                                for f in as_completed(futs):
+                                    try:
+                                        if futs[f] == "kimi":
+                                            kimi_data = f.result()
+                                        else:
+                                            glm_data = f.result()
+                                    except Exception:
+                                        pass
+
+                            # 融合K2.6+GLM结果
+                            desc_parts = []
+                            if kimi_data and kimi_data.continuity_score > 0:
+                                desc_parts.append(f"K2.6:{kimi_data.continuity_score:.0%}连续")
+                                if kimi_data.best_moments:
+                                    desc_parts.append(f"{len(kimi_data.best_moments)}黄金镜")
+                                engine = "kimi_k2.6"
+                            if glm_data:
+                                scene_types = [d.get("scene_type","?") for d in glm_data[:5]]
+                                qualities = [d.get("quality_label","?") for d in glm_data[:5]]
+                                desc_parts.append(f"GLM:{len(glm_data)}镜[{'·'.join(scene_types[:4])}]")
+                                deep_annotations = glm_data
+                                if engine == "none":
+                                    engine = "glm4v"
+                            if desc_parts:
+                                scene_desc = " | ".join(desc_parts)
+                                engine = "kimi_k2.6+glm4v" if kimi_data and glm_data else engine
+
                 except Exception as e:
                     logger.debug("深度视频分析跳过: %s", e)
 
@@ -660,11 +679,13 @@ JSON格式:
                     video_scenes.append({
                         "at_sec": 0, "file": Path(path).name,
                         "description": scene_desc, "engine": engine,
+                        "deep_annotations": deep_annotations,  # GLM-4V详细标注
                     })
                 job.enhancement_report["video"] = {
                     "analyzed": len(video_scenes),
                     "engine": engine,
                     "scenes": video_scenes,
+                    "deep_annotations": deep_annotations,
                 }
                 break
 
