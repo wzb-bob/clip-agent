@@ -5,7 +5,7 @@
 逻辑: 三层结构(开头/介绍/结尾)·配音驱动·covers_audio·蒙太奇景别变化
 """
 from __future__ import annotations
-import json, logging, os, time
+import json, logging, os, sys, time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -580,49 +580,93 @@ JSON格式:
                     except Exception as e:
                         logger.debug("音频理解跳过: %s", e)
 
-        # 1c. 视频分析 (Kimi Vision优先→OpenCV降级)
+        # 1c. 视频分析 (Kimi K2.6→Kimi轻量→OpenCV降级)
         video_slots = job.video_slots or {}
         for idx, path in video_slots.items():
             if os.path.exists(path):
                 scene_desc = None
-                engine = "opencv"
+                engine = "none"
 
-                # 🆕 Kimi Vision 场景理解 (关键帧→画面描述)
+                # 🆕 L1: Kimi K2.6 + GLM-4V 深度视频分析
                 try:
-                    if os.getenv("KIMI_API_KEY"):
-                        from .kimi_scene_analyzer import analyze_video_scenes
-                        kimi_scenes = analyze_video_scenes(path, frame_count=2)
-                        if kimi_scenes:
-                            desc_parts = [f"@{s.at_sec:.0f}s:{s.description[:40]}" for s in kimi_scenes]
-                            scene_desc = f"Kimi: {' | '.join(desc_parts)}"
-                            engine = "kimi_vision"
-                except Exception as e:
-                    logger.debug("Kimi Vision跳过: %s", e)
+                    kimi_ok = bool(os.getenv("KIMI_API_KEY"))
+                    glm_ok = bool(os.getenv("GLM_API_KEY"))
+                    if kimi_ok or glm_ok:
+                        # Bypass mock layer for real imports
+                        for _mk in ["app.services.shot_splitter", "app.services.kimi_video_analyzer",
+                                     "app.services.material_analyzer"]:
+                            if _mk in sys.modules and "MagicMock" in str(type(sys.modules[_mk])):
+                                del sys.modules[_mk]
+                        import app.services.shot_splitter as _ss
+                        shots = _ss.ShotSplitter().split(Path(path))
+                        if shots and shots.shots:
+                            shot_list = [{"start": s.start_sec, "end": s.end_sec, "duration_sec": s.end_sec - s.start_sec}
+                                        for s in shots.shots]
 
-                # OpenCV降级
+                            # Kimi K2.6 跨镜链条分析
+                            if kimi_ok:
+                                import app.services.kimi_video_analyzer as _kva
+                                try:
+                                    kimi_result = _kva.analyze_video_chain(path, shot_list)
+                                    if kimi_result and kimi_result.continuity_score > 0:
+                                        engine = "kimi_k2.6"
+                                        scene_desc = f"K2.6: {kimi_result.continuity_score:.0%}连续·{len(kimi_result.suggestions)}建议"
+                                except Exception:
+                                    pass
+
+                            # GLM-4V 帧级8维深标注
+                            if glm_ok and not scene_desc:
+                                import app.services.material_analyzer as _ma
+                                try:
+                                    analyzer = _ma.MaterialAnalyzer()
+                                    deep = analyzer.analyze_deep(path, shot_list, max_shots=6)
+                                    if deep:
+                                        dims = []
+                                        for d in deep[:3]:
+                                            dims.append(f"{d.get('scene_type','')}:{d.get('quality_label','')}")
+                                        scene_desc = f"GLM: {len(deep)}镜·{' | '.join(dims)}"
+                                        engine = "glm4v"
+                                        logger.info("GLM-4V: %d镜深标注", len(deep))
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    logger.debug("深度视频分析跳过: %s", e)
+
+                # L2: Kimi轻量关键帧描述
+                if not scene_desc:
+                    try:
+                        if os.getenv("KIMI_API_KEY"):
+                            from .kimi_scene_analyzer import analyze_video_scenes
+                            kimi_scenes = analyze_video_scenes(path, frame_count=2)
+                            if kimi_scenes:
+                                desc_parts = [f"@{s.at_sec:.0f}s:{s.description[:40]}" for s in kimi_scenes]
+                                scene_desc = f"Kimi: {' | '.join(desc_parts)}"
+                                engine = "kimi_vision"
+                    except Exception:
+                        pass
+
+                # L3: OpenCV降级
                 if not scene_desc:
                     try:
                         from .local_video_analyzer import quick_analyze
                         va = quick_analyze(path)
                         if "error" not in va:
-                            scene_desc = (
-                                f"OpenCV: {va.get('inferred_type','')}·{va.get('quality','')}·"
-                                f"{va.get('motion','')}·face={va.get('face_coverage_pct',0)}%"
-                            )
-                    except Exception as e:
-                        logger.debug("OpenCV分析跳过: %s", e)
+                            scene_desc = f"OpenCV: {va.get('inferred_type','')}·{va.get('quality','')}·face={va.get('face_coverage_pct',0)}%"
+                            engine = "opencv"
+                    except Exception:
+                        pass
 
                 if scene_desc:
                     video_scenes.append({
                         "at_sec": 0, "file": Path(path).name,
                         "description": scene_desc, "engine": engine,
                     })
-                    job.enhancement_report["video"] = {
-                        "analyzed": len(video_scenes),
-                        "engine": engine,
-                        "scenes": video_scenes,
-                    }
-                break  # 分析一个代表性素材即可
+                job.enhancement_report["video"] = {
+                    "analyzed": len(video_scenes),
+                    "engine": engine,
+                    "scenes": video_scenes,
+                }
+                break
 
         if on_progress:
             on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")
