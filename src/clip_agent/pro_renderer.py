@@ -347,14 +347,14 @@ def _burn_text_with_animation(working: str, prepared: list, font_path: str, tota
         else:
             y_pos = "h*0.4"
 
-        # Drawtext with fade-in: alpha goes 0→1 over first 0.3s
-        fade_in_end = min(acc + 0.3, acc + dur * 0.5)
+        # Windows: FFmpeg auto-searches C:\Windows\Fonts\, use filename only
+        # to avoid path colon 'C:' being parsed as filter separator
+        font_name = Path(font_path).name if ":" in font_path else font_path
         text_filters.append(
-            f"drawtext=text='{text_raw}':fontfile='{font_path}':"
+            f"drawtext=text='{text_raw}':fontfile='{font_name}':"
             f"fontsize={font_size}:fontcolor={color}@0.95:"
             f"x=(w-tw)/2:y={y_pos}:"
             f"enable='between(t,{acc},{acc+dur})':"
-            f"alpha='if(lt(t,{fade_in_end}),(t-{acc})/0.3,1)':"
             f"bordercolor=black@0.5:borderw=3"
         )
         acc += dur
