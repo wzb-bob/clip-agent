@@ -704,6 +704,22 @@ JSON格式:
         if on_progress:
             on_progress("exporting", 70, "📤 导出: 剪映草稿+MP4...")
 
+        # Step 2.5: 美学约束检查 (导演决策后·导出前)
+        try:
+            from .aesthetic_constraints import validate_plan
+            aesthetic = validate_plan(job.sentences, job.script_type)
+            job.enhancement_report["aesthetic"] = aesthetic
+            if not aesthetic["passed"]:
+                logger.warning("美学检查: %d错误·%d警告·评分%d",
+                             aesthetic["error_count"], aesthetic["warning_count"], aesthetic["score"])
+                # 自动修复errors
+                if aesthetic["error_count"] > 0:
+                    from .aesthetic_constraints import check_aesthetics, apply_fixes
+                    issues = check_aesthetics(job.sentences, job.script_type)
+                    job.sentences = apply_fixes(job.sentences, issues)
+        except Exception as e:
+            logger.debug("美学检查跳过: %s", e)
+
         # Step 3: 转换+导出
         unified_job = direct_to_execution_job(plan, job.audio_slots, job.video_slots)
         unified_job.job_id = job.job_id
