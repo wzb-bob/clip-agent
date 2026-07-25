@@ -115,6 +115,16 @@ def render_professional(job: RenderJob) -> RenderResult:
     output = job.output_path
     font_path = _find_font()
 
+    # ===== Step 0: 片头片尾卡片(如果job指定) =====
+    intro_card = job.__dict__.get("intro_card", "")
+    outro_card = job.__dict__.get("outro_card", "")
+    if intro_card:
+        intro_file = _generate_card(intro_card, job, "intro")
+        job.segments.insert(0, {"file": intro_file, "duration": 2.0, "broll": False, "text": "", "color_grade": "vivid", "transition": "cut"})
+    if outro_card:
+        outro_file = _generate_card(outro_card, job, "outro")
+        job.segments.append({"file": outro_file, "duration": 2.5, "broll": False, "text": "", "color_grade": "vivid", "transition": "fade"})
+
     # ===== Step 1: 素材预处理(Trim+Lanczos缩放+调色+锐化+音频归一化) =====
     prepared = []
     for i, seg in enumerate(job.segments):
@@ -226,6 +236,14 @@ def render_professional(job: RenderJob) -> RenderResult:
         try: os.remove(p["file"])
         except: pass
 
+    # 清理片头片尾临时文件(如果有)
+    if intro_card:
+        try: os.remove(intro_file)
+        except: pass
+    if outro_card:
+        try: os.remove(outro_file)
+        except: pass
+
     logger.info("渲染完成: %s (%.1fMB·%.1fs·%d段·字体=%s)",
                output, size_mb, elapsed, len(prepared), "✅" if font_path else "❌")
     return RenderResult(True, output, total_dur, round(size_mb, 1), round(elapsed, 1))
@@ -253,6 +271,30 @@ def _concat_simple(prepared: list, job: RenderJob) -> str:
     try: os.remove(concat_list)
     except: pass
     return main_track
+
+
+def _generate_card(text: str, job: RenderJob, card_type: str) -> str:
+    """生成片头/片尾卡片 — 渐变色背景+大字标题"""
+    tmp = tempfile.mktemp(suffix=f"_{card_type}.mp4")
+    dur = 2.0 if card_type == "intro" else 2.5
+    color1 = "darkred" if card_type == "intro" else "navy" if card_type == "outro" else "black"
+    font_size = 64 if len(text) < 12 else 48
+    # Gradient background + centered text
+    vf = (
+        f"drawbox=x=0:y=0:w={job.width}:h={job.height}:color={color1}@0.9:t=fill,"
+        f"drawtext=text='{text}':fontsize={font_size}:fontcolor=white@0.95:"
+        f"x=(w-tw)/2:y=h*0.4:"
+        f"bordercolor=black@0.3:borderw=2,"
+        f"fade=t=in:st=0:d=0.3,fade=t=out:st={dur-0.5}:d=0.5"
+    )
+    subprocess.run([
+        "ffmpeg","-y","-hide_banner","-loglevel","error",
+        "-f","lavfi","-i",f"color=c={color1}:size={job.width}x{job.height}:d={dur}",
+        "-vf", vf,
+        "-c:v","libx264","-preset","ultrafast","-crf","18",
+        tmp
+    ], timeout=15)
+    return tmp
 
 
 def _probe_has_audio(video_path: str) -> bool:
