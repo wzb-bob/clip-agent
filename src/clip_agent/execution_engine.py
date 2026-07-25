@@ -41,21 +41,45 @@ class ChangyiExecutionEngine:
 
     # ===== Stage 1: 脚本解析 → 句级分镜 =====
     def parse_script(self, job: ExecutionJob) -> ExecutionJob:
-        """解析脚本→句级时间线→每句标注素材类型+景别+时长"""
-        from .sentence_editor import parse_script_to_sentences
+        """AI语义解析(LLM优先)→句级时间线→每句标注素材+景别+时长+画面需求"""
         job.status = "parsing"
-        # 边界保护
         if not job.script_text or len(job.script_text.strip()) < 3:
             job.errors.append("脚本内容太短（至少3个字）")
             return job
         try:
-            job.sentences = parse_script_to_sentences(job.script_text.strip(), job.script_type)
+            # 🆕 语义引擎: LLM理解→降级关键词规则
+            from .semantic_engine import analyze_script, apply_semantic_to_job
+            analysis = analyze_script(job.script_text.strip(), job.script_type, use_ai=True)
+            if analysis and analysis.segments:
+                # 转换SemanticSegment→ScriptSentence
+                from .sentence_editor import ScriptSentence
+                job.sentences = []
+                for seg in analysis.segments:
+                    job.sentences.append(ScriptSentence(
+                        index=seg.index, text=seg.text,
+                        start_sec=seg.start_sec, duration_sec=seg.duration_sec,
+                        required_material="talking_head" if not seg.broll_needed else "product_closeup",
+                        required_shot=seg.shot_type,
+                        required_camera="static" if not seg.broll_needed else "push_in",
+                        text_overlay=seg.text_overlay, text_position=seg.text_position,
+                        is_broll=seg.broll_needed,
+                    ))
+                # 注入语义分析结果
+                job.enhancement_report["semantic"] = {
+                    "emotional_arc": analysis.emotional_arc,
+                    "key_moments": analysis.key_moments,
+                    "broll_suggestions": analysis.broll_suggestions,
+                    "engine": "deepseek" if analysis.emotional_arc != "规则推断" else "keyword_rules",
+                }
             if not job.sentences:
                 job.errors.append("无法解析脚本——请检查标点符号")
                 return job
             job.progress_pct = 15
-            logger.info("脚本解析: %d句·%.1fs", len(job.sentences),
-                       sum(s.duration_sec for s in job.sentences))
+            logger.info("脚本解析(%s): %d句·%.1fs·弧线=%s",
+                       job.enhancement_report.get("semantic", {}).get("engine", "?"),
+                       len(job.sentences),
+                       sum(s.duration_sec for s in job.sentences),
+                       analysis.emotional_arc[:40] if analysis else "?")
         except Exception as e:
             job.errors.append(f"解析失败: {e}")
         return job
