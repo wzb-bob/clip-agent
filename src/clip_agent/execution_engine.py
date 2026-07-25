@@ -123,7 +123,7 @@ class ChangyiExecutionEngine:
                 # 🆕 Whisper词级时间戳 — 精准切点
                 try:
                     import whisper
-                    model = whisper.load_model("base")  # base=中文可用, ~140MB
+                    model = whisper.load_model("small")  # base=中文可用, ~140MB
                     result = model.transcribe(video_path, word_timestamps=True)
                     word_times = []
                     for seg in result.get("segments", []):
