@@ -116,7 +116,17 @@ def create_talking_video(
 # ══════════════════════════════════════════════════════════
 
 def _generate_speech(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
-    """Edge TTS 生成语音"""
+    """语音合成 — 克隆声音优先→EdgeTTS降级"""
+    try:
+        from .voice_cloner import generate_speech as gen_speech
+        # 尝试用克隆声音
+        result = gen_speech(text, voice_id=voice, engine="auto")
+        if result:
+            return result
+    except Exception:
+        pass
+
+    # EdgeTTS降级
     try:
         import asyncio
         import edge_tts
