@@ -41,8 +41,11 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     """统一导演模式 — 语义+视频+导演+渲染一条线"""
     from clip_agent.execution_engine import quick_direct
 
+    # 时长预估
+    char_count = len(script_text)
+    est_duration = char_count * 0.25 + 3  # 每字0.25s + 3s缓冲
     print(f"\n📝 脚本: {script_text[:60]}...")
-    print(f"🎭 类型: {script_type}")
+    print(f"🎭 类型: {script_type} | ⏱️ 预估时长: {est_duration:.0f}s")
     print(f"🎬 素材: {len(video_files or [])}视频 + {len(audio_files or [])}音频\n")
 
     audio_slots = {}
