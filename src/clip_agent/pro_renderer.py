@@ -266,10 +266,15 @@ def render_professional(job: RenderJob) -> RenderResult:
     elapsed = time.time() - t0
     size_mb = os.path.getsize(output) / (1024*1024) if os.path.exists(output) else 0
 
-    # 清理临时文件
+    # 清理临时文件(预处理段+中间产物)
     for p in prepared:
         try: os.remove(p["file"])
         except: pass
+    # 清理级联中间文件
+    for _tf in [intro_file if intro_card else "", outro_file if outro_card else ""]:
+        if _tf:
+            try: os.remove(_tf)
+            except: pass
 
     # 清理片头片尾临时文件(如果有)
     if intro_card:
