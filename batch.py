@@ -120,11 +120,36 @@ def main():
 
     print(f"\n📊 完成: {success}/{len(scripts)} 成功 · {total_elapsed:.0f}s")
 
-    # 保存报告
+    # JSON报告
     report_path = os.path.join(args.output, "batch_report.json")
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump({"total": len(scripts), "success": success, "elapsed": round(total_elapsed, 1), "results": results}, f, ensure_ascii=False, indent=2)
-    print(f"📊 报告: {report_path}")
+
+    # HTML汇总报告
+    rows = "".join(
+        f"<tr><td>{'✅' if r['success'] else '❌'}</td><td>#{r['index']:03d}</td>"
+        f"<td>{r.get('type','?')}</td><td>{r.get('script','')[:50]}</td>"
+        f"<td>{r.get('segments','?')}段</td><td>{r.get('duration',0):.0f}s</td>"
+        f"<td>{r.get('elapsed',0):.0f}s</td></tr>"
+        for r in results
+    )
+    html = f"""<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>批量出片报告</title>
+<style>body{{font-family:Microsoft YaHei;max-width:900px;margin:20px auto;padding:20px;background:#0a0a0a;color:#eee}}
+h1{{color:#e94560}}table{{width:100%;border-collapse:collapse}}th,td{{padding:10px;text-align:left;border-bottom:1px solid #333}}
+th{{color:#888}}.card{{background:#1a1a1a;border-radius:12px;padding:20px;margin:16px 0;border:1px solid #333}}
+.stat{{display:inline-block;background:#222;border-radius:8px;padding:12px 20px;margin:8px;text-align:center}}
+.stat .v{{font-size:1.5em;font-weight:bold;color:#e94560}}.stat .l{{font-size:0.75em;color:#888}}</style></head><body>
+<h1>🎬 批量出片报告</h1><div class="card">
+<div class="stat"><div class="v">{success}/{len(scripts)}</div><div class="l">成功率</div></div>
+<div class="stat"><div class="v">{total_elapsed:.0f}s</div><div class="l">总耗时</div></div>
+<div class="stat"><div class="v">{total_elapsed/len(scripts):.0f}s</div><div class="l">平均每条</div></div>
+</div><div class="card"><h2>📋 结果</h2><table><tr><th></th><th>#</th><th>类型</th><th>脚本</th><th>段数</th><th>时长</th><th>耗时</th></tr>{rows}</table></div>
+</body></html>"""
+    html_path = os.path.join(args.output, "batch_report.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"📊 JSON: {report_path}")
+    print(f"📄 HTML: {html_path}")
 
 
 if __name__ == "__main__":
