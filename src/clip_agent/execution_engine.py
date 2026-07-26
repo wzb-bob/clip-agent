@@ -576,6 +576,20 @@ JSON格式:
                             "transcript": audio_data.get("transcript", "")[:200],
                             "moments": len(audio_data.get("moments", [])),
                         }
+                        # Store Whisper word timestamps for frame-precise editing
+                        if audio_data.get("segments"):
+                            word_times = []
+                            for seg in audio_data["segments"]:
+                                for w in seg.get("words", []):
+                                    word_times.append(w)
+                            if word_times:
+                                gaps = []
+                                for i in range(1, len(word_times)):
+                                    gap_ms = int((word_times[i]["start"] - word_times[i-1]["end"]) * 1000)
+                                    if gap_ms >= 300:
+                                        gaps.append({"between": f'{word_times[i-1]["word"]}→{word_times[i]["word"]}', "at_sec": round(word_times[i-1]["end"]+gap_ms/2000,2), "gap_ms": gap_ms, "is_sentence_break": gap_ms>=500})
+                                job.enhancement_report["whisper"] = {"total_words": len(word_times), "sentence_breaks": len([g for g in gaps if g["is_sentence_break"]]), "gaps": gaps, "word_times": word_times[:50]}
+                                logger.info("Whisper: %d词·%d句间断", len(word_times), len(gaps))
                         break
                     except Exception as e:
                         logger.debug("音频理解跳过: %s", e)

@@ -102,6 +102,11 @@ def understand_audio(video_path: str) -> dict:
             # 语速 (字/秒)
             speed = round(word_count / max(seg_dur, 0.1), 1) if seg_dur > 0 else 0
 
+            # Include word-level timestamps for frame-precise editing
+            word_list = [
+                {"word": w.get("word","").strip(), "start": round(w.get("start",0), 2), "end": round(w.get("end",0), 2)}
+                for w in words
+            ]
             result["segments"].append({
                 "start": round(seg.get("start", 0), 2),
                 "end": round(seg.get("end", 0), 2),
@@ -109,6 +114,7 @@ def understand_audio(video_path: str) -> dict:
                 "confidence": round(seg.get("confidence", 0), 2),
                 "speed_cps": speed,
                 "word_count": word_count,
+                "words": word_list,
             })
     except Exception as e:
         logger.warning("Whisper转录失败: %s", e)
