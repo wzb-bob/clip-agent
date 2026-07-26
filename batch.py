@@ -153,4 +153,10 @@ th{{color:#888}}.card{{background:#1a1a1a;border-radius:12px;padding:20px;margin
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n⏹️ 用户中断")
+    except Exception as e:
+        print(f"\n❌ 批量处理出错: {e}")
+        print(f"💡 {type(e).__name__}")

@@ -241,4 +241,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n⏹️ 用户中断")
+    except Exception as e:
+        print(f"\n❌ 出错了: {e}")
+        print("💡 提示:")
+        print("  1. 检查 .env 文件是否存在且API Key正确")
+        print("  2. 确认 FFmpeg 已安装: ffmpeg -version")
+        print("  3. 运行诊断: python -c \"from clip_agent.health import print_health_report; print_health_report()\"")
+        print(f"  4. 如持续失败，检查: {type(e).__name__}")
