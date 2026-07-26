@@ -164,12 +164,27 @@ def main():
     parser.add_argument("--type", default="团购售卖", help="脚本类型")
     parser.add_argument("--video", nargs="*", default=[], help="视频素材")
     parser.add_argument("--audio", nargs="*", default=[], help="音频素材")
+    parser.add_argument("--photo", help="照片路径(数字人模式)")
     parser.add_argument("--output", default="./demo_output/", help="输出目录")
     parser.add_argument("--interactive", "-i", action="store_true", help="交互式模式")
     parser.add_argument("--compare", "-c", action="store_true", help="对比模式: 旧关键词 vs 新AI导演")
     args = parser.parse_args()
 
-    if args.compare and args.script:
+    if args.photo and args.script:
+        # 🆕 数字人模式
+        print_banner()
+        print(f"\n👤 数字人模式: {args.photo}")
+        from clip_agent.digital_human import create_and_clip
+        result = create_and_clip(
+            args.photo, args.script, args.type,
+            output_dir=args.output,
+            broll_videos=args.video,
+        )
+        print(f"✅ 成功: {result['success']}")
+        print(f"   数字人视频: {result.get('digital_human_video','')}")
+        print(f"   成品目录: {result.get('edited_video','')}")
+        print(f"   {result['sentence_count']}段·{result['duration']:.0f}s")
+    elif args.compare and args.script:
         print_banner()
         demo_compare(args.script, args.type)
     elif args.interactive or not args.script:

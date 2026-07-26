@@ -69,6 +69,9 @@ from .script_clip_bridge import (BridgeConfig, bridge_script_to_clip, apply_brid
 from .feedback_loop import (FeedbackReport, FeedbackStore, generate_feedback,
     get_script_optimization_hints)
 
+# ── 数字人(1) ──
+from .digital_human import (create_talking_video, create_and_clip, DigitalHumanResult)
+
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
 
