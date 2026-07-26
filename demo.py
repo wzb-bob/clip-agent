@@ -37,7 +37,7 @@ def print_banner():
 ╚══════════════════════════════════════════════╝""")
 
 
-def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir):
+def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir, json_mode=False):
     """统一导演模式 — 语义+视频+导演+渲染一条线"""
     from clip_agent.execution_engine import quick_direct
 
@@ -96,6 +96,27 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     print(f"╚══════════════════════════════════════╝")
     if job.errors:
         print(f"   ⚠️: {job.errors[:2]}")
+    if json_mode:
+        # JSON输出模式
+        import json as _json
+        output = {
+            "success": job.status == "done",
+            "script_type": script_type,
+            "segments": len(job.sentences),
+            "duration": sum(s.duration_sec for s in job.sentences),
+            "elapsed": elapsed,
+            "semantic": sem.get("engine", "?"),
+            "emotional_arc": sem.get("emotional_arc", ""),
+            "video_engine": vid.get("engine", "?"),
+            "director_style": dc.get("editing_style", ""),
+            "color_grade": dc.get("color_grade", ""),
+            "bgm": dc.get("bgm", ""),
+            "aesthetic_score": aes.get("score", 0),
+            "output_dir": os.path.abspath(output_dir),
+        }
+        print(_json.dumps(output, ensure_ascii=False, indent=2))
+        return job
+
     if job.status == "done" or job.draft_path:
         print(f"\n✅ 输出: {os.path.abspath(output_dir)}")
         # 生成HTML报告
@@ -198,6 +219,7 @@ def main():
     parser.add_argument("--interactive", "-i", action="store_true", help="交互式模式")
     parser.add_argument("--compare", "-c", action="store_true", help="对比模式: 旧关键词 vs 新AI导演")
     parser.add_argument("--showcase", "-s", action="store_true", help="演示模式: 全流程+HTML报告")
+    parser.add_argument("--json", action="store_true", help="JSON输出(机器可读)")
     args = parser.parse_args()
 
     # 自动识别脚本类型
@@ -220,7 +242,7 @@ def main():
         from clip_agent.health import print_health_report
         print_health_report()
         print()
-        demo_pipeline(args.script, script_type, args.video, args.audio, args.output)
+        demo_pipeline(args.script, script_type, args.video, args.audio, args.output, args.json)
         print(f"\n📄 HTML报告: {os.path.abspath(args.output)}")
         # Auto-open in browser
         try:
@@ -251,7 +273,7 @@ def main():
         interactive_mode()
     else:
         print_banner()
-        demo_pipeline(args.script, script_type, args.video, args.audio, args.output)
+        demo_pipeline(args.script, script_type, args.video, args.audio, args.output, args.json)
 
 
 if __name__ == "__main__":
