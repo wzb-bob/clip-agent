@@ -204,7 +204,15 @@ def main():
         print_health_report()
         print()
         demo_pipeline(args.script, args.type, args.video, args.audio, args.output)
-        print(f"\n📄 HTML报告已生成: {os.path.abspath(args.output)}")
+        print(f"\n📄 HTML报告: {os.path.abspath(args.output)}")
+        # Auto-open in browser
+        try:
+            import webbrowser
+            report = os.path.join(args.output, "出片报告.html")
+            if os.path.exists(report):
+                webbrowser.open(f"file:///{report.replace(chr(92), '/')}")
+        except Exception:
+            pass
     elif args.photo and args.script:
         # 🆕 数字人模式
         print_banner()
