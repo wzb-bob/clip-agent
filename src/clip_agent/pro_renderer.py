@@ -263,6 +263,19 @@ def render_professional(job: RenderJob) -> RenderResult:
     elif not output:
         output = working
 
+    # 预览模式(低分辨率·极速编码)
+    if job.__dict__.get("preview", False):
+        preview_out = tempfile.mktemp(suffix="_preview.mp4")
+        subprocess.run([
+            "ffmpeg","-y","-hide_banner","-loglevel","error",
+            "-i", working,
+            "-vf", f"scale=540:960:flags=lanczos",
+            "-c:v","libx264","-preset","ultrafast","-crf","28",
+            "-c:a","aac","-b:a","64k",
+            preview_out
+        ], timeout=30)
+        working = preview_out
+
     elapsed = time.time() - t0
     size_mb = os.path.getsize(output) / (1024*1024) if os.path.exists(output) else 0
 
