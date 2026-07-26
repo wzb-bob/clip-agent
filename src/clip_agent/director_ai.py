@@ -278,15 +278,25 @@ def fuse_signals(
 
 
 def _generate_broll_shotlist(broll_segments: list, script_type: str) -> list[dict]:
-    """为每个B-roll段生成具体拍摄指导"""
+    """为每个B-roll段生成拍摄指导+尝试AI生图"""
     shotlist = []
     for i, s in enumerate(broll_segments):
         visual = s.broll_visual or s.script_text or f"B-roll{i+1}"
         shot_type = s.shot_type or "CU"
         duration = s.duration_sec
 
-        # 拍摄指导
         guide = _get_shooting_guide(shot_type, visual[:40])
+
+        # 🆕 尝试AI生图
+        ai_image = None
+        try:
+            from .ai_image_gen import generate_broll_image
+            result = generate_broll_image(visual[:80], style="food" if script_type=="团购售卖" else "realistic")
+            if result.get("success") and result.get("engine") != "placeholder":
+                ai_image = result.get("image_path", "")
+        except Exception:
+            pass
+
         shotlist.append({
             "index": i + 1,
             "at_sec": round(s.start_sec, 1),
@@ -294,6 +304,7 @@ def _generate_broll_shotlist(broll_segments: list, script_type: str) -> list[dic
             "shot_type": shot_type,
             "what_to_shoot": visual[:60],
             "shooting_guide": guide,
+            "ai_image": ai_image or "",
             "lighting": "自然光" if script_type == "老板IP" else "明亮",
             "camera": "手机·稳定器或固定" if shot_type != "CU" else "手机凑近·对焦主体",
         })

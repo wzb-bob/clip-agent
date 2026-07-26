@@ -96,10 +96,12 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
         # B-roll拍摄清单
         ba = dc.get("broll_assignments", [])
         if ba:
-            print(f"\n📋 B-roll拍摄清单:")
+            print(f"\n📋 B-roll拍摄清单 ({len(ba)}段):")
             for b in ba:
-                print(f"  🎬 @{b['at_sec']:.1f}s [{b['shot_type']}] {b['what_to_shoot'][:40]}")
-                print(f"     📱 {b['shooting_guide']}")
+                ai = "🤖AI已生成" if b.get("ai_image") else "📱需拍摄"
+                print(f"  {ai} @{b['at_sec']:.1f}s [{b['shot_type']}] {b['what_to_shoot'][:40]}")
+                if not b.get("ai_image"):
+                    print(f"     📱 {b['shooting_guide']}")
 
 
 def demo_compare(script_text, script_type):
