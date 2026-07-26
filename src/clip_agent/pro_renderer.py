@@ -342,11 +342,25 @@ def _concat_with_xfade(prepared: list, job: RenderJob, font_path: str) -> str:
             filters.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
             prev_out = f"v{i}"
         else:
-            xfade_dur = 0.3  # 300ms crossfade
-            offset = dur - xfade_dur
+            # 自适应转场时长: 基于段标注+节奏
+            trans = p.get("transition", "cut")
+            if trans == "cut":
+                xfade_dur = 0.0  # 硬切
+            elif trans == "dissolve":
+                xfade_dur = 0.3  # 标准溶解
+            elif trans == "fade":
+                xfade_dur = 0.5  # 慢淡出
+            else:
+                xfade_dur = 0.2  # 快速过渡
+            offset = dur - xfade_dur if xfade_dur > 0 else dur
             filters.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
-            filters.append(f"[{prev_out}][v{i}]xfade=transition=fade:duration={xfade_dur}:offset={offset}[xf{i}]")
-            prev_out = f"xf{i}"
+            if xfade_dur > 0:
+                filters.append(f"[{prev_out}][v{i}]xfade=transition=fade:duration={xfade_dur}:offset={offset}[xf{i}]")
+                prev_out = f"xf{i}"
+            else:
+                # 硬切: 直接concat(通过overlay实现无缝切换)
+                filters.append(f"[{prev_out}][v{i}]concat=n=2:v=1[xf{i}]")
+                prev_out = f"xf{i}"
 
     # Audio: concat all audio tracks (only if inputs have audio)
     has_audio = _probe_has_audio(prepared[0]["file"]) if prepared else False
