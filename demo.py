@@ -66,16 +66,22 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     )
 
     elapsed = time.time() - t0
-    sem = job.enhancement_report.get("semantic", {})
-    vid = job.enhancement_report.get("video", {})
-    dc = job.enhancement_report.get("director_plan", {})
+    er = job.enhancement_report
+    sem = er.get("semantic", {})
+    vid = er.get("video", {})
+    dc = er.get("director_plan", {})
 
-    print(f"\n📊 结果:")
-    print(f"   语义: {sem.get('engine','?')} | 弧线: {sem.get('emotional_arc','?')[:50]}")
-    for vs in vid.get("scenes", [])[:2]:
-        print(f"   视频: {vs.get('engine','?')} | {vs.get('description','?')[:80]}")
-    print(f"   导演: {dc.get('editing_style','信号融合')} | {dc.get('color_grade','?')} | {dc.get('bgm','?')}")
-    print(f"   段数: {len(job.sentences)} | 状态: {job.status} | 耗时: {elapsed:.1f}s")
+    print(f"\n╔══════════════════════════════════════╗")
+    print(f"║      🎬 全链路阶段报告              ║")
+    print(f"╠══════════════════════════════════════╣")
+    print(f"║ 语义 | {sem.get('engine','?'):10s} | {sem.get('emotional_arc','?')[:35]}")
+    for vs in vid.get("scenes", [])[:1]:
+        print(f"║ 视频 | {vs.get('engine','?'):10s} | {vs.get('description','?')[:35]}")
+    print(f"║ 导演 | {dc.get('editing_style','?'):10s} | {dc.get('color_grade','?')} | {dc.get('bgm','?')}")
+    aes = er.get('aesthetic',{})
+    print(f"║ 美学 | {aes.get('score',0)}分·{aes.get('error_count',0)}错·{aes.get('warning_count',0)}警")
+    print(f"║ 导出 | {job.status:10s} | {len(job.sentences)}段·{elapsed:.0f}s")
+    print(f"╚══════════════════════════════════════╝")
     if job.errors:
         print(f"   ⚠️: {job.errors[:2]}")
     if job.status == "done" or job.draft_path:
