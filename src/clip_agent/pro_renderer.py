@@ -230,6 +230,26 @@ def render_professional(job: RenderJob) -> RenderResult:
     ], timeout=60)
     working = fade_out
 
+    # ===== Step 5.5: 电影感(vignette+letterbox) =====
+    if job.__dict__.get("cinematic", False):
+        cinematic_out = tempfile.mktemp(suffix="_cinematic.mp4")
+        bar_h = int(job.height * 0.08)  # 8% letterbox
+        # vignette: darken edges + letterbox: top/bottom black bars
+        vf_cine = (
+            f"vignette=PI/4,"
+            f"drawbox=x=0:y=0:w={job.width}:h={bar_h}:color=black@1:t=fill,"
+            f"drawbox=x=0:y={job.height-bar_h}:w={job.width}:h={bar_h}:color=black@1:t=fill"
+        )
+        subprocess.run([
+            "ffmpeg","-y","-hide_banner","-loglevel","error",
+            "-i", working,
+            "-vf", vf_cine,
+            "-c:v","libx264","-preset","medium","-crf","18",
+            "-c:a","copy",
+            cinematic_out
+        ], timeout=60)
+        working = cinematic_out
+
     # ===== Step 6: BGM混音(带闪避) =====
     if job.bgm_path and os.path.exists(job.bgm_path):
         working = _mix_bgm_with_ducking(working, job.bgm_path, total_dur, job.bgm_volume)
