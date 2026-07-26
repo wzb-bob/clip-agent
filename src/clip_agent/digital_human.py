@@ -277,47 +277,59 @@ def create_and_clip(
     """
     一站式: 数字人生成 + 剪辑管线 = 完整成片。
 
-    这是面向用户的终极入口 — 一张照片出片。
+    独立流程 — 不嵌入execution_engine。分两步:
+    Step1: 照片→TTS→数字人动画视频
+    Step2: 数字人视频→剪辑管线(加B-roll/字幕/BGM)
+
+    容错: Step1成功但Step2失败→仍返回数字人视频
     """
-    # Step 1: 数字人视频
-    result = create_talking_video(photo_path, script_text, mode="simple")
-    if not result.success:
-        return {"success": False, "error": result.error}
+    # Step 1: 数字人视频 (独立·不依赖剪辑管线)
+    dh_result = create_talking_video(photo_path, script_text, mode="simple")
+    if not dh_result.success:
+        return {"success": False, "error": dh_result.error, "stage": "digital_human_failed"}
 
-    # Step 2: 送入剪辑管线(加B-roll/字幕/BGM)
-    from .execution_engine import quick_direct
-
+    # Step 2: 送入剪辑管线 (可选·失败不影响Step1产出)
+    clip_success = False
+    sentence_count = 0
     outdir = output_dir or str(Path(photo_path).parent / f"output_{int(time.time())}")
-    os.makedirs(outdir, exist_ok=True)
 
-    video_slots = {1: result.video_path}
-    if broll_videos:
-        for i, vf in enumerate(broll_videos):
-            if os.path.exists(vf):
-                video_slots[i + 2] = vf
+    try:
+        from .execution_engine import quick_direct
+        os.makedirs(outdir, exist_ok=True)
 
-    job = quick_direct(
-        script_text=script_text,
-        script_type=script_type,
-        audio_slots={1: result.video_path},  # 数字人视频自带音频
-        video_slots=video_slots,
-        output_dir=outdir,
-    )
+        video_slots = {1: dh_result.video_path}
+        if broll_videos:
+            for i, vf in enumerate(broll_videos):
+                if os.path.exists(vf):
+                    video_slots[i + 2] = vf
 
-    # 成功时记录偏好
-    if job.status == "done":
-        try:
-            from .feedback_loop import learn_from_success
-            quality = job.quality_report.get("score", 7)
-            learn_from_success(script_type, "digital_human", "warm", "auto", quality)
-        except Exception:
-            pass
+        job = quick_direct(
+            script_text=script_text,
+            script_type=script_type,
+            audio_slots={1: dh_result.video_path},
+            video_slots=video_slots,
+            output_dir=outdir,
+        )
+        clip_success = job.status == "done"
+        sentence_count = len(job.sentences)
+
+        if clip_success:
+            try:
+                from .feedback_loop import learn_from_success
+                quality = job.quality_report.get("score", 7)
+                learn_from_success(script_type, "digital_human", "warm", "auto", quality)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("剪辑管线失败(数字人视频仍可用): %s", e)
 
     return {
-        "success": job.status == "done",
-        "digital_human_video": result.video_path,
-        "edited_video": outdir,
-        "duration": result.duration_sec,
-        "face_detected": result.face_detected,
-        "sentence_count": len(job.sentences),
+        "success": dh_result.success,
+        "clip_success": clip_success,
+        "digital_human_video": dh_result.video_path,
+        "edited_video": outdir if clip_success else dh_result.video_path,
+        "duration": dh_result.duration_sec,
+        "face_detected": dh_result.face_detected,
+        "sentence_count": sentence_count,
+        "stage": "complete" if clip_success else "digital_human_only",
     }

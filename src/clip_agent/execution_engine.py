@@ -819,11 +819,6 @@ def quick_direct(script_text: str, script_type: str = "团购售卖",
                  output_dir: str = "", on_progress: callable = None) -> ExecutionJob:
     """
     🆕 统一导演模式 — 一行代码完成从理解到成片。
-
-    比 quick_execute 更强大:
-    - 语义+音频+视频并行理解
-    - 导演AI融合所有信号
-    - 一次决策替代所有中间步骤
     """
     engine = ChangyiExecutionEngine()
     job = ExecutionJob(
