@@ -59,10 +59,19 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     t0 = time.time()
     os.makedirs(output_dir, exist_ok=True)
 
+    # 带进度条的导演模式
+    stages_done = set()
+    def show_progress(stage, pct, msg):
+        if stage not in stages_done:
+            stages_done.add(stage)
+            bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
+            print(f"  [{bar}] {msg}")
+
     job = quick_direct(
         script_text=script_text, script_type=script_type,
         audio_slots=audio_slots, video_slots=video_slots,
         output_dir=output_dir,
+        on_progress=show_progress,
     )
 
     elapsed = time.time() - t0
