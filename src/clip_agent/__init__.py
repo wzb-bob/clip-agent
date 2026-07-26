@@ -72,6 +72,11 @@ from .feedback_loop import (FeedbackReport, FeedbackStore, generate_feedback,
 # ── 数字人(1) ──
 from .digital_human import (create_talking_video, create_and_clip, DigitalHumanResult)
 
+# ── Pixelle集成(3) ──
+from .voice_cloner import (clone_voice, generate_speech, list_voices)
+from .plugin_registry import (register, get_plugin, print_plugins, PLUGINS)
+from .ai_image_gen import (generate_broll_image, generate_broll_batch)
+
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
 
