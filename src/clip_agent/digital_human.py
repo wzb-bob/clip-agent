@@ -147,7 +147,32 @@ def _get_audio_duration(audio_path: str) -> float:
 
 
 def _detect_face(photo_path: str):
-    """OpenCV人脸检测 → 返回bbox"""
+    """人脸检测 — MediaPipe优先→OpenCV降级"""
+    # Try MediaPipe (more accurate)
+    try:
+        import mediapipe as mp
+        mp_face = mp.solutions.face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+        img = cv2.imread(photo_path)
+        if img is None:
+            return None
+        h, w = img.shape[:2]
+        results = mp_face.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        if results.detections:
+            det = results.detections[0]
+            bbox = det.location_data.relative_bounding_box
+            return {
+                "x": int(bbox.xmin * w),
+                "y": int(bbox.ymin * h),
+                "w": int(bbox.width * w),
+                "h": int(bbox.height * h),
+            }
+        mp_face.close()
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # OpenCV Haar Cascade fallback
     try:
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         img = cv2.imread(photo_path)
@@ -169,20 +194,37 @@ def _generate_simple_animation(
 ) -> bool:
     """
     轻量动画模式:
-    1. 缩放照片到竖屏
-    2. Ken Burns缓慢推进(模拟呼吸感)
+    1. 人脸居中·放大裁剪(有脸) / 全图Ken Burns(无脸)
+    2. 缓慢推进(模拟呼吸感)
     3. 叠加音频
     """
     try:
-        # 模糊背景+人脸居中+Ken Burns zoom
-        zoom_end = 1.1  # 10% zoom over duration
-        vf = (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-            f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
-            f"fade=t=in:st=0:d=0.3,fade=t=out:st={duration-0.5}:d=0.5"
-        )
+        if face_bbox:
+            # 有人脸 → 裁剪到人脸区域+边距·居中放大
+            fx, fy, fw, fh = face_bbox["x"], face_bbox["y"], face_bbox["w"], face_bbox["h"]
+            # 人脸中心+50%边距
+            cx, cy = fx + fw/2, fy + fh/2
+            crop_w, crop_h = int(fw * 2.5), int(fh * 3.0)
+            crop_x = max(0, int(cx - crop_w/2))
+            crop_y = max(0, int(cy - crop_h/2))
+            zoom_end = 1.08  # gentle zoom
+            vf = (
+                f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+                f"scale={width}:{height}:flags=lanczos,"
+                f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
+                f"fade=t=in:st=0:d=0.3,fade=t=out:st={duration-0.5}:d=0.5"
+            )
+        else:
+            # 无脸 → 全图Ken Burns
+            zoom_end = 1.1
+            vf = (
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
+                f"fade=t=in:st=0:d=0.3,fade=t=out:st={duration-0.5}:d=0.5"
+            )
 
         subprocess.run([
             "ffmpeg","-y","-hide_banner","-loglevel","error",
