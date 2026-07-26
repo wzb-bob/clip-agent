@@ -232,8 +232,11 @@ def _generate_simple_animation(
             crop_x = max(0, int(cx - crop_w/2))
             crop_y = max(0, int(cy - crop_h/2))
             zoom_end = 1.08  # gentle zoom
+            # 美颜: 轻度磨皮(smartblur)+提亮+暖色
             vf = (
                 f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+                f"smartblur=lr=1.5:ls=0.8,"
+                f"eq=brightness=0.03:contrast=1.02:saturation=1.05,"
                 f"scale={width}:{height}:flags=lanczos,"
                 f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
