@@ -407,12 +407,12 @@ def _overlay_broll(working: str, prepared: list, broll_indices: list, job: Rende
 
 
 def _burn_text_with_animation(working: str, prepared: list, font_path: str, total_dur: float) -> str:
-    """文字烧录 — 带淡入动画，居中/底部/顶部定位"""
+    """逐词动画字幕 — 打字机效果·居中/底部/顶部定位"""
     text_segs = [(i, p) for i, p in enumerate(prepared) if p.get("text")]
     if not text_segs:
         return working
 
-    # Build drawtext filters with fade-in animation
+    font_name = Path(font_path).name if ":" in font_path else font_path
     acc = 0.0
     text_filters = []
 
@@ -421,38 +421,45 @@ def _burn_text_with_animation(working: str, prepared: list, font_path: str, tota
         if not text_raw:
             continue
 
-        # Dynamic font sizing based on text length
-        text_len = len(text_raw)
-        if text_len > 10:
-            font_size = 42
-        elif text_len > 6:
-            font_size = 56
-        else:
-            font_size = 72
-
         dur = tp.get("duration", 3.0)
         position = tp.get("text_position", "center")
         color = tp.get("text_color", "#FFFFFF")
 
-        # Vertical position
-        if position == "top":
-            y_pos = "h*0.15"
-        elif position == "bottom":
-            y_pos = "h*0.85"
-        else:
-            y_pos = "h*0.4"
+        if position == "top": y_pos = "h*0.15"
+        elif position == "bottom": y_pos = "h*0.85"
+        else: y_pos = "h*0.4"
 
-        # Windows: FFmpeg auto-searches C:\Windows\Fonts\, use filename only
-        # to avoid path colon 'C:' being parsed as filter separator
-        font_name = Path(font_path).name if ":" in font_path else font_path
-        text_filters.append(
-            f"drawtext=text='{text_raw}':fontfile='{font_name}':"
-            f"fontsize={font_size}:fontcolor={color}@0.95:"
-            f"x=(w-tw)/2:y={y_pos}:"
-            f"enable='between(t,{acc},{acc+dur})':"
-            f"bordercolor=black@0.5:borderw=3"
-        )
+        # Font size
+        text_len = len(text_raw)
+        font_size = 42 if text_len > 10 else (56 if text_len > 6 else 72)
+
+        # 🆕 逐词动画: 每个词单独drawtext·递增delay
+        words = text_raw.replace("！","").replace("!","").split()
+        if len(words) >= 2:
+            word_delay = min(0.15, dur / len(words))  # 每词延迟
+            for wi, w in enumerate(words):
+                word_start = acc + wi * word_delay
+                word_end = acc + dur
+                text_filters.append(
+                    f"drawtext=text='{w}':fontfile='{font_name}':"
+                    f"fontsize={font_size}:fontcolor={color}@0.95:"
+                    f"x=(w-tw)/2:y={y_pos}:"
+                    f"enable='between(t,{word_start},{word_end})':"
+                    f"bordercolor=black@0.5:borderw=3"
+                )
+        else:
+            # Single word — just show it
+            text_filters.append(
+                f"drawtext=text='{text_raw}':fontfile='{font_name}':"
+                f"fontsize={font_size}:fontcolor={color}@0.95:"
+                f"x=(w-tw)/2:y={y_pos}:"
+                f"enable='between(t,{acc},{acc+dur})':"
+                f"bordercolor=black@0.5:borderw=3"
+            )
         acc += dur
+
+    if not text_filters:
+        return working
 
     text_out = tempfile.mktemp(suffix="_text.mp4")
     subprocess.run([
