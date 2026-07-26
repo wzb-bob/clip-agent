@@ -78,8 +78,15 @@ def create_talking_video(
     if not voice:
         voice = _auto_select_voice(script_type)
 
+    # 音频质量: 长脚本自动减速(避免语速过快)
+    char_count = len(script_text)
+    if char_count > 100:
+        voice_speed = min(1.0, char_count / 80)  # 保证每字足够时间
+    else:
+        voice_speed = 1.0
+
     # Step 1: 生成语音
-    audio_path = _generate_speech(script_text, voice)
+    audio_path = _generate_speech(script_text, voice, voice_speed)
     if not audio_path:
         return DigitalHumanResult(False, "", "", 0, mode, False, "语音生成失败")
 
@@ -129,12 +136,11 @@ def _auto_select_voice(script_type: str) -> str:
     return voices.get(script_type, "zh-CN-XiaoxiaoNeural")
 
 
-def _generate_speech(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
+def _generate_speech(text: str, voice: str = "zh-CN-XiaoxiaoNeural", speed: float = 1.0) -> str:
     """语音合成 — 克隆声音优先→EdgeTTS降级"""
     try:
         from .voice_cloner import generate_speech as gen_speech
-        # 尝试用克隆声音
-        result = gen_speech(text, voice_id=voice, engine="auto")
+        result = gen_speech(text, voice_id=voice, engine="auto", speed=speed)
         if result:
             return result
     except Exception:
