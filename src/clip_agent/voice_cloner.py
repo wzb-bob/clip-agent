@@ -113,7 +113,7 @@ def _speak_indextts(text: str, voice_id: str, speed: float) -> str:
 
 
 def _speak_edgetts(text: str, speed: float = 1.0) -> str:
-    """EdgeTTS语音合成(降级)"""
+    """EdgeTTS语音合成 — 带SSML语调增强"""
     try:
         import asyncio
         import edge_tts
@@ -121,8 +121,12 @@ def _speak_edgetts(text: str, speed: float = 1.0) -> str:
         async def _gen():
             tmp = tempfile.mktemp(suffix=".mp3")
             rate = f"{'+' if speed > 1 else ''}{int((speed-1)*100)}%" if speed != 1 else "+0%"
+
+            # 🆕 SSML增强: 感叹句加强调·问句升调·价格数字加重
+            ssml_text = _add_ssml_emphasis(text)
+
             communicate = edge_tts.Communicate(
-                text, "zh-CN-XiaoxiaoNeural",
+                ssml_text, "zh-CN-XiaoxiaoNeural",
                 rate=rate,
             )
             await communicate.save(tmp)
@@ -132,6 +136,40 @@ def _speak_edgetts(text: str, speed: float = 1.0) -> str:
     except Exception as e:
         logger.warning("EdgeTTS失败: %s", e)
         return ""
+
+
+def _add_ssml_emphasis(text: str) -> str:
+    """为文本加SSML语调标记 — 让机械音更自然"""
+    import re
+
+    # 1. 数字+块/元 → 加重读出
+    text = re.sub(r'(\d+)\s*块', r'<emphasis level="strong">\1块</emphasis>', text)
+    text = re.sub(r'(\d+)\s*元', r'<emphasis level="strong">\1元</emphasis>', text)
+
+    # 2. 感叹句 → 升调
+    sentences = re.split(r'([。！？!?\n])', text)
+    result = []
+    for i, part in enumerate(sentences):
+        if part in ('！', '!', '？', '?'):
+            result.append(part)
+        elif part.strip():
+            # 加停顿和语调
+            if any(kw in part for kw in ["!", "！", "块", "元", "只此", "第一", "最好"]):
+                result.append(f'<prosody rate="fast" pitch="high">{part.strip()}</prosody>')
+            elif any(kw in part for kw in ["?", "？"]):
+                result.append(f'<prosody pitch="high">{part.strip()}</prosody>')
+            elif any(kw in part for kw in ["来", "赶紧", "快", "左下", "团购"]):
+                result.append(f'<prosody rate="+10%">{part.strip()}</prosody>')
+            else:
+                result.append(part.strip())
+
+    text = "".join(result)
+
+    # Wrap in SSML
+    if "<" in text:
+        text = f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN">{text}</speak>'
+
+    return text
 
 
 def list_voices() -> list[dict]:
