@@ -138,7 +138,7 @@ def render_professional(job: RenderJob) -> RenderResult:
         eq_filter = COLOR_PRESETS.get(color_grade, COLOR_PRESETS["neutral"])
 
         tmp = tempfile.mktemp(suffix=f"_seg{i}.mp4")
-        # 专业竖屏处理: 模糊背景填充(Douyin风格) + Lanczos缩放 + 调色 + 锐化
+        # 专业竖屏处理: 模糊背景 + Lanczos缩放 + 调色 + 锐化
         vf_blur_bg = (
             f"split[bg][fg];"
             f"[bg]scale={job.width}:{job.height}:force_original_aspect_ratio=increase,"
@@ -148,6 +148,21 @@ def render_professional(job: RenderJob) -> RenderResult:
             f"{eq_filter},"
             f"unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=0.5"
         )
+
+        # 🆕 速度控制: slow_motion(0.5x) / fast_forward(2x) / normal
+        speed = seg.get("speed", "normal")
+        speed_factor = seg.get("speed_factor", 1.0)
+        if speed != "normal" and speed_factor != 1.0:
+            vf_blur_bg += f",setpts={1/speed_factor}*PTS"
+            dur = dur * speed_factor
+
+        # 🆕 Ken Burns效果: 缓慢zoom in/out
+        kb = seg.get("ken_burns", "")
+        if kb and dur > 1.0:
+            if kb == "zoom_in":
+                vf_blur_bg += f",zoompan=z='min(zoom+0.001,1.3)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
+            elif kb == "zoom_out":
+                vf_blur_bg += f",zoompan=z='max(zoom-0.001,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
 
         # 检查是否有音频轨 → 加loudnorm归一化
         has_audio = _probe_has_audio(fp)
