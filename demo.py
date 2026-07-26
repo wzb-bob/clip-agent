@@ -194,9 +194,18 @@ def main():
     parser.add_argument("--output", default="./demo_output/", help="输出目录")
     parser.add_argument("--interactive", "-i", action="store_true", help="交互式模式")
     parser.add_argument("--compare", "-c", action="store_true", help="对比模式: 旧关键词 vs 新AI导演")
+    parser.add_argument("--showcase", "-s", action="store_true", help="演示模式: 全流程+HTML报告")
     args = parser.parse_args()
 
-    if args.photo and args.script:
+    if args.showcase and args.script:
+        # 演示模式: 完整管线 + 诊断面板 + HTML报告
+        print_banner()
+        from clip_agent.health import print_health_report
+        print_health_report()
+        print()
+        demo_pipeline(args.script, args.type, args.video, args.audio, args.output)
+        print(f"\n📄 HTML报告已生成: {os.path.abspath(args.output)}")
+    elif args.photo and args.script:
         # 🆕 数字人模式
         print_banner()
         print(f"\n👤 数字人模式: {args.photo}")
