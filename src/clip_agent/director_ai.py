@@ -300,6 +300,15 @@ def ai_director_decision(
     """
     try:
         from ._imports import chat_via_gateway, get_model_name
+        # Retry direct import if cached version is None (mock layer interference)
+        if not chat_via_gateway:
+            try:
+                import app.services.gateway_client as _gc
+                chat_via_gateway = _gc.chat_via_gateway
+                import app.services.model_config as _mc
+                get_model_name = _mc.get_model_name
+            except ImportError:
+                return None
         if not chat_via_gateway:
             return None
 
