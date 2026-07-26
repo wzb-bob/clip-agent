@@ -170,8 +170,9 @@ def _check_ai_services() -> dict:
 def print_health_report():
     """打印健康报告"""
     result = check_all()
+    ver = result["checks"].get("version", {}).get("detail", "?")
     print("=" * 60)
-    print("🩺 长益剪辑Agent 系统诊断")
+    print(f"🩺 长益剪辑Agent 系统诊断  v{ver}")
     print("=" * 60)
     print("  【基础设施】")
     for name in ["ffmpeg", "python_deps", "disk", "modules"]:
