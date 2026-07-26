@@ -230,6 +230,19 @@ def render_professional(job: RenderJob) -> RenderResult:
     ], timeout=60)
     working = fade_out
 
+    # ===== Step 5.3: 最终润色(全局调色+锐化+降噪) =====
+    polish_out = tempfile.mktemp(suffix="_polish.mp4")
+    vf_polish = "eq=gamma=1.02:contrast=1.03:saturation=1.02,unsharp=luma_msize_x=3:luma_msize_y=3:luma_amount=0.2,hqdn3d=luma_spatial=1.5"
+    subprocess.run([
+        "ffmpeg","-y","-hide_banner","-loglevel","error",
+        "-i", working,
+        "-vf", vf_polish,
+        "-c:v","libx264","-preset","medium","-crf","18",
+        "-c:a","copy",
+        polish_out
+    ], timeout=60)
+    working = polish_out
+
     # ===== Step 5.5: 电影感(vignette+letterbox) =====
     if job.__dict__.get("cinematic", False):
         cinematic_out = tempfile.mktemp(suffix="_cinematic.mp4")
