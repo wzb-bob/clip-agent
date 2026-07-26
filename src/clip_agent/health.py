@@ -32,6 +32,12 @@ def check_all() -> dict:
     results["disk"] = _check_disk()
     # OpenMontage
     results["openmontage"] = _check_openmontage()
+    # Version
+    try:
+        vf = Path(__file__).parent.parent.parent / "VERSION"
+        results["version"] = {"healthy": True, "detail": vf.read_text().strip() if vf.exists() else "unknown"}
+    except Exception:
+        results["version"] = {"healthy": True, "detail": "unknown"}
     # Modules
     results["modules"] = _check_modules()
     # AI Services
