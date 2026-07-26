@@ -304,6 +304,15 @@ def create_and_clip(
         output_dir=outdir,
     )
 
+    # 成功时记录偏好
+    if job.status == "done":
+        try:
+            from .feedback_loop import learn_from_success
+            quality = job.quality_report.get("score", 7)
+            learn_from_success(script_type, "digital_human", "warm", "auto", quality)
+        except Exception:
+            pass
+
     return {
         "success": job.status == "done",
         "digital_human_video": result.video_path,
