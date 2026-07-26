@@ -47,6 +47,10 @@ class DirectorDecision:
     transition_in: str = "cut"
     transition_out: str = "cut"
 
+    # 特效
+    speed: str = "normal"          # normal/slow_motion/fast_forward
+    ken_burns: str = ""            # zoom_in/zoom_out/空
+
     # 置信度 (这个决策有多确定)
     confidence: float = 0.7
     decision_basis: str = ""       # 基于什么做的决策
@@ -280,10 +284,10 @@ DIRECTOR_PROMPT = """你是短视频剪辑总导演。综合所有信号做最�
 类型: {script_type}
 
 返回JSON。格式严格:
-{{"style":"快节奏卡点","color":"vivid","bgm":"电子鼓点","arc":"冲击→展示→购买","segs":[{{"t":0,"d":2.8,"s":"CU","b":0,"tx":"68块!"}},{{"t":2.8,"d":5,"s":"MCU","b":1,"tx":"干煸技术"}}]}}
+{{"style":"快节奏卡点","color":"vivid","bgm":"电子鼓点","arc":"冲击→展示→购买","segs":[{{"t":0,"d":2.8,"s":"CU","b":0,"tx":"68块!","sp":"normal","kb":""}},{{"t":2.8,"d":5,"s":"MCU","b":1,"tx":"干煸技术","sp":"slow_motion","kb":"zoom_in"}}]}}
 
-segs字段说明: t=start_sec, d=duration, s=shot_type(CU/MCU/MS/LS), b=broll(0/1), tx=text_overlay
-只返回JSON。不要markdown。不要换行。"""
+segs: t=start, d=duration, s=shot(CU/MCU/MS/LS), b=broll(0/1), tx=text, sp=speed(normal/slow_motion/fast_forward), kb=ken_burns(zoom_in/zoom_out/空)
+只返回JSON。"""
 
 
 def ai_director_decision(
@@ -446,6 +450,8 @@ def direct(
                     is_golden_moment=(s.get("t", 99) < 0.5),
                     emphasis_effect="AI导演标注",
                     transition_out="dissolve" if bool(s.get("b", 0)) else "cut",
+                    speed=s.get("sp", s.get("speed", "normal")),
+                    ken_burns=s.get("kb", s.get("ken_burns", "")),
                     confidence=0.9,
                     decision_basis="AI综合判断",
                 ))
