@@ -77,6 +77,9 @@ from .voice_cloner import (clone_voice, generate_speech, list_voices)
 from .plugin_registry import (register, get_plugin, print_plugins, PLUGINS)
 from .ai_image_gen import (generate_broll_image, generate_broll_batch)
 
+# ── 统一API(1) ──
+from .changyi_api import ChangyiAPI, api, APIResult
+
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
 

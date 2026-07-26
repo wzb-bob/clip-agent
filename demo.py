@@ -29,6 +29,18 @@ if _backend.exists():
     sys.path.insert(0, str(_backend))
 
 
+def check_env():
+    """启动前检查关键配置"""
+    issues = []
+    if not os.getenv("DEEPSEEK_API_KEY"):
+        issues.append("DEEPSEEK_API_KEY 未配置 → AI导演降级为规则模式")
+    if not os.getenv("KIMI_API_KEY"):
+        issues.append("KIMI_API_KEY 未配置 → 视频分析降级为OpenCV")
+    if not shutil.which("ffmpeg"):
+        issues.append("FFmpeg 未安装 → 渲染不可用")
+    return issues
+
+
 def print_banner():
     print("""
 ╔══════════════════════════════════════════════╗
