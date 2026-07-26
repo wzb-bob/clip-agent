@@ -93,6 +93,14 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
             ov = f" [{s.text_overlay}]" if s.text_overlay else ""
             print(f"  {b} {s.start_sec:5.1f}s {s.required_shot:3s} {s.text[:20]:20s}{ov}")
 
+        # B-roll拍摄清单
+        ba = dc.get("broll_assignments", [])
+        if ba:
+            print(f"\n📋 B-roll拍摄清单:")
+            for b in ba:
+                print(f"  🎬 @{b['at_sec']:.1f}s [{b['shot_type']}] {b['what_to_shoot'][:40]}")
+                print(f"     📱 {b['shooting_guide']}")
+
 
 def demo_compare(script_text, script_type):
     """对比模式: 旧关键词 vs 新AI导演"""

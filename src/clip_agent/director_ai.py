@@ -268,7 +268,48 @@ def fuse_signals(
                len(plan.segments), len(plan.golden_moments),
                sum(s.confidence for s in plan.segments) / max(len(plan.segments), 1))
 
+    # Step 4: B-roll拍摄清单生成
+    if plan.segments:
+        broll_segs = [s for s in plan.segments if s.is_broll]
+        if broll_segs:
+            plan.broll_assignments = _generate_broll_shotlist(broll_segs, script_type)
+
     return plan
+
+
+def _generate_broll_shotlist(broll_segments: list, script_type: str) -> list[dict]:
+    """为每个B-roll段生成具体拍摄指导"""
+    shotlist = []
+    for i, s in enumerate(broll_segments):
+        visual = s.broll_visual or s.script_text or f"B-roll{i+1}"
+        shot_type = s.shot_type or "CU"
+        duration = s.duration_sec
+
+        # 拍摄指导
+        guide = _get_shooting_guide(shot_type, visual[:40])
+        shotlist.append({
+            "index": i + 1,
+            "at_sec": round(s.start_sec, 1),
+            "duration": round(duration, 1),
+            "shot_type": shot_type,
+            "what_to_shoot": visual[:60],
+            "shooting_guide": guide,
+            "lighting": "自然光" if script_type == "老板IP" else "明亮",
+            "camera": "手机·稳定器或固定" if shot_type != "CU" else "手机凑近·对焦主体",
+        })
+
+    return shotlist
+
+
+def _get_shooting_guide(shot_type: str, visual: str) -> str:
+    """根据景别和内容生成拍摄指导"""
+    guides = {
+        "CU": f"手机凑近·对焦主体·保持3秒稳定·拍'{visual}'特写",
+        "MCU": f"手机距离0.5米·拍摄'{visual}'·中近景",
+        "MS": f"手机距离1米·人物腰部以上·拍摄'{visual}'",
+        "LS": f"手机距离2-3米·全景·拍摄'{visual}'·缓慢移动展示空间",
+    }
+    return guides.get(shot_type, f"拍摄'{visual}'")
 
 
 # ══════════════════════════════════════════════════════════
