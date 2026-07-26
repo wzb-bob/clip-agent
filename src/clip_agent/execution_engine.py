@@ -721,10 +721,17 @@ JSON格式:
             except Exception as e:
                 logger.debug("对齐跳过: %s", e)
 
+        # 注入GLM深标注到导演
+        deep_ann = job.enhancement_report.get("video", {}).get("deep_annotations", [])
+        for da in deep_ann[:3]:
+            video_scenes.append({
+                "at_sec": da.get("start_sec", 0),
+                "description": f"GLM:{da.get('scene_type','')}/{da.get('shot_type','')}/{da.get('emotion','')}",
+                "engine": "glm4v",
+            })
+
         if on_progress:
             on_progress("directing", 40, "🎬 导演AI: 融合所有信号...")
-
-        # Step 2: 导演融合决策
         from .director_ai import direct, direct_to_execution_job
 
         plan = direct(
