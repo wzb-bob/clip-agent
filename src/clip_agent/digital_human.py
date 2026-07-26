@@ -49,7 +49,7 @@ def create_talking_video(
     script_text: str,
     output_path: str = "",
     mode: str = "simple",
-    voice: str = "zh-CN-XiaoxiaoNeural",
+    voice: str = "",  # 空=按脚本类型自动选择
     width: int = 1080,
     height: int = 1920,
 ) -> DigitalHumanResult:
@@ -73,6 +73,10 @@ def create_talking_video(
 
     t0 = time.time()
     output = output_path or str(vp.parent / f"digital_human_{int(time.time())}.mp4")
+
+    # 自动选声线
+    if not voice:
+        voice = _auto_select_voice(script_type)
 
     # Step 1: 生成语音
     audio_path = _generate_speech(script_text, voice)
@@ -114,6 +118,16 @@ def create_talking_video(
 # ══════════════════════════════════════════════════════════
 # 内部实现
 # ══════════════════════════════════════════════════════════
+
+def _auto_select_voice(script_type: str) -> str:
+    """脚本类型→最优声线"""
+    voices = {
+        "老板IP": "zh-CN-YunxiNeural",       # 男声·温暖可信
+        "团购售卖": "zh-CN-XiaoxiaoNeural",   # 女声·活泼有冲击力
+        "引流进店": "zh-CN-YunxiNeural",      # 男声·亲切自然
+    }
+    return voices.get(script_type, "zh-CN-XiaoxiaoNeural")
+
 
 def _generate_speech(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> str:
     """语音合成 — 克隆声音优先→EdgeTTS降级"""
