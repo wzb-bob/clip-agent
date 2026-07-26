@@ -520,9 +520,6 @@ JSON格式:
                         on_progress: callable = None) -> ExecutionJob:
         """
         🆕 统一导演模式 — 替代碎片化6阶段。
-
-        流程: 语义分析 + 音频理解 → 导演融合 → 导出
-        跳过了旧的分阶段流程, 一次导演决策替代所有中间步骤。
         """
         t0 = time.time()
 
