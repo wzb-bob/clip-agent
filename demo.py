@@ -190,7 +190,7 @@ def interactive_mode():
 def main():
     parser = argparse.ArgumentParser(description="长益剪辑Agent 演示脚本")
     parser.add_argument("script", nargs="?", help="脚本文案")
-    parser.add_argument("--type", default="团购售卖", help="脚本类型")
+    parser.add_argument("--type", default="auto", help="脚本类型(auto=自动识别)")
     parser.add_argument("--video", nargs="*", default=[], help="视频素材")
     parser.add_argument("--audio", nargs="*", default=[], help="音频素材")
     parser.add_argument("--photo", help="照片路径(数字人模式)")
@@ -200,13 +200,27 @@ def main():
     parser.add_argument("--showcase", "-s", action="store_true", help="演示模式: 全流程+HTML报告")
     args = parser.parse_args()
 
+    # 自动识别脚本类型
+    script_type = script_type
+    if script_type == "auto" and args.script:
+        script_type = "auto_detect"
+        txt = args.script
+        if any(kw in txt for kw in ["块","元","价","只","斤","团购","优惠","促销","活动"]):
+            script_type = "团购售卖"
+        elif any(kw in txt for kw in ["故事","经历","创业","老板","理念","年","一直","坚持","认","食材","凌晨"]):
+            script_type = "老板IP"
+        elif any(kw in txt for kw in ["地址","定位","导航","排队","门头","只此","独家","路","号","找"]):
+            script_type = "引流进店"
+        else:
+            script_type = "团购售卖"
+
     if args.showcase and args.script:
         # 演示模式: 完整管线 + 诊断面板 + HTML报告
         print_banner()
         from clip_agent.health import print_health_report
         print_health_report()
         print()
-        demo_pipeline(args.script, args.type, args.video, args.audio, args.output)
+        demo_pipeline(args.script, script_type, args.video, args.audio, args.output)
         print(f"\n📄 HTML报告: {os.path.abspath(args.output)}")
         # Auto-open in browser
         try:
@@ -222,7 +236,7 @@ def main():
         print(f"\n👤 数字人模式: {args.photo}")
         from clip_agent.digital_human import create_and_clip
         result = create_and_clip(
-            args.photo, args.script, args.type,
+            args.photo, args.script, script_type,
             output_dir=args.output,
             broll_videos=args.video,
         )
@@ -232,12 +246,12 @@ def main():
         print(f"   {result['sentence_count']}段·{result['duration']:.0f}s")
     elif args.compare and args.script:
         print_banner()
-        demo_compare(args.script, args.type)
+        demo_compare(args.script, script_type)
     elif args.interactive or not args.script:
         interactive_mode()
     else:
         print_banner()
-        demo_pipeline(args.script, args.type, args.video, args.audio, args.output)
+        demo_pipeline(args.script, script_type, args.video, args.audio, args.output)
 
 
 if __name__ == "__main__":
