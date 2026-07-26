@@ -86,6 +86,13 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
         print(f"   ⚠️: {job.errors[:2]}")
     if job.status == "done" or job.draft_path:
         print(f"\n✅ 输出: {os.path.abspath(output_dir)}")
+        # 生成HTML报告
+        try:
+            from clip_agent.report_generator import generate_html_report
+            report = generate_html_report(job, output_dir)
+            print(f"📄 报告: {report}")
+        except Exception:
+            pass
         # 决策摘要
         print(f"\n🎬 导演决策摘要:")
         for s in job.sentences[:8]:
