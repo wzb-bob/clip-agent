@@ -24,6 +24,8 @@ class ScriptSentence:
     text_overlay: str = ""
     text_position: str = "bottom"
     is_broll: bool = False
+    speed: str = "normal"        # normal/slow_motion/fast_forward
+    ken_burns: str = ""          # zoom_in/zoom_out/空
     # A槽: 音频(可传视频——只取声音)
     audio_file: str = ""
     audio_status: str = "pending"

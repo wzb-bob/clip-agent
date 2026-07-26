@@ -449,6 +449,9 @@ JSON格式:
                         "text": s.text_overlay,
                         "color_grade": default_color,
                         "transition": "dissolve" if s.is_broll else "cut",
+                        "speed": getattr(s, "speed", "normal"),
+                        "speed_factor": 0.5 if getattr(s, "speed", "normal") == "slow_motion" else (2.0 if getattr(s, "speed", "") == "fast_forward" else 1.0),
+                        "ken_burns": getattr(s, "ken_burns", ""),
                     })
 
             if video_segments and output_dir:
