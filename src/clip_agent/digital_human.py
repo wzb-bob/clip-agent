@@ -229,32 +229,31 @@ def _generate_simple_animation(
     3. 叠加音频
     """
     try:
+        # 呼吸感动画: zoom振荡(sin)+微平移
+        # zoom: 1.0→1.06 缓慢推进 + sin振荡模拟呼吸
+        # x: 微小平移模拟自然头动
         if face_bbox:
-            # 有人脸 → 裁剪到人脸区域+边距·居中放大
             fx, fy, fw, fh = face_bbox["x"], face_bbox["y"], face_bbox["w"], face_bbox["h"]
-            # 人脸中心+50%边距
             cx, cy = fx + fw/2, fy + fh/2
             crop_w, crop_h = int(fw * 2.5), int(fh * 3.0)
             crop_x = max(0, int(cx - crop_w/2))
             crop_y = max(0, int(cy - crop_h/2))
-            zoom_end = 1.08  # gentle zoom
-            # 美颜: 轻度磨皮(smartblur)+提亮+暖色
+            # zoom=1.03+0.03*sin(t*1.5) → 在1.0~1.06间呼吸
+            # x=center+2*sin(t*0.7) → 微小平移模拟头动
             vf = (
                 f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
                 f"smartblur=lr=1.5:ls=0.8,"
                 f"eq=brightness=0.03:contrast=1.02:saturation=1.05,"
                 f"scale={width}:{height}:flags=lanczos,"
-                f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
+                f"zoompan=z='1.03+0.03*sin(on*0.05)':d=1:"  # 4.2s呼吸周期
+                f"x='iw/2-(iw/zoom/2)+2*sin(on*0.04)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
                 f"fade=t=in:st=0:d=0.3,fade=t=out:st={duration-0.5}:d=0.5"
             )
         else:
-            # 无脸 → 全图Ken Burns
-            zoom_end = 1.1
             vf = (
                 f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"zoompan=z='min(zoom+0.0003,{zoom_end})':d=1:"
+                f"zoompan=z='1.03+0.03*sin(on*0.05)':d=1:"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30,"
                 f"fade=t=in:st=0:d=0.3,fade=t=out:st={duration-0.5}:d=0.5"
             )
