@@ -205,7 +205,9 @@ def render_professional(job: RenderJob) -> RenderResult:
         })
 
     if not prepared:
-        return RenderResult(False, "", 0, 0, 0, "素材预处理失败")
+        return RenderResult(False, "", 0, 0, 0, f"素材预处理失败: {len(job.segments)}段输入→0段有效")
+    if len(prepared) < len(job.segments):
+        logger.warning("部分素材失败: %d/%d段有效", len(prepared), len(job.segments))
 
     total_dur = sum(p["duration"] for p in prepared)
 
