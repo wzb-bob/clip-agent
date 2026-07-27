@@ -12,10 +12,11 @@ class TestCheckAesthetics:
     def test_repeat_shot_detection(self):
         from clip_agent.aesthetic_constraints import AestheticIssue
         # 3 consecutive CU shots should trigger R1
+        # Use required_shot (what ScriptSentence actually has)
         segs = [
-            type('S',(),{'shot_type':'CU','start_sec':0,'duration_sec':2,'is_broll':False})(),
-            type('S',(),{'shot_type':'CU','start_sec':2,'duration_sec':2,'is_broll':False})(),
-            type('S',(),{'shot_type':'CU','start_sec':4,'duration_sec':2,'is_broll':False})(),
+            type('S',(),{'required_shot':'CU','shot_type':'CU','start_sec':0,'duration_sec':2,'is_broll':False})(),
+            type('S',(),{'required_shot':'CU','shot_type':'CU','start_sec':2,'duration_sec':2,'is_broll':False})(),
+            type('S',(),{'required_shot':'CU','shot_type':'CU','start_sec':4,'duration_sec':2,'is_broll':False})(),
         ]
         from clip_agent.aesthetic_constraints import check_aesthetics
         issues = check_aesthetics(segs)
@@ -25,7 +26,7 @@ class TestCheckAesthetics:
 
     def test_long_segment_warning(self):
         segs = [
-            type('S',(),{'shot_type':'MS','start_sec':0,'duration_sec':10,'is_broll':False})(),
+            type('S',(),{'required_shot':'MS','shot_type':'MS','start_sec':0,'duration_sec':10,'is_broll':False})(),
         ]
         from clip_agent.aesthetic_constraints import check_aesthetics
         issues = check_aesthetics(segs)
@@ -34,7 +35,7 @@ class TestCheckAesthetics:
 
     def test_short_segment_warning(self):
         segs = [
-            type('S',(),{'shot_type':'CU','start_sec':0,'duration_sec':0.3,'is_broll':False})(),
+            type('S',(),{'required_shot':'CU','shot_type':'CU','start_sec':0,'duration_sec':0.3,'is_broll':False})(),
         ]
         from clip_agent.aesthetic_constraints import check_aesthetics
         issues = check_aesthetics(segs)
@@ -44,8 +45,8 @@ class TestCheckAesthetics:
 class TestValidatePlan:
     def test_perfect_plan(self):
         segs = [
-            type('S',(),{'shot_type':'CU','start_sec':0,'duration_sec':2.5,'is_broll':False})(),
-            type('S',(),{'shot_type':'MS','start_sec':2.5,'duration_sec':3,'is_broll':True})(),
+            type('S',(),{'required_shot':'CU','shot_type':'CU','start_sec':0,'duration_sec':2.5,'is_broll':False})(),
+            type('S',(),{'required_shot':'MS','shot_type':'MS','start_sec':2.5,'duration_sec':3,'is_broll':True})(),
             type('S',(),{'shot_type':'CU','start_sec':5.5,'duration_sec':2.5,'is_broll':False})(),
         ]
         from clip_agent.aesthetic_constraints import validate_plan
