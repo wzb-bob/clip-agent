@@ -61,12 +61,12 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     """统一导演模式 — 语义+视频+导演+渲染一条线"""
     from clip_agent.execution_engine import quick_direct
 
-    # 时长预估
-    char_count = len(script_text)
-    est_duration = char_count * 0.25 + 3  # 每字0.25s + 3s缓冲
-    print(f"\n📝 脚本: {script_text[:60]}...")
-    print(f"🎭 类型: {script_type} | ⏱️ 预估时长: {est_duration:.0f}s")
-    print(f"🎬 素材: {len(video_files or [])}视频 + {len(audio_files or [])}音频\n")
+    if not json_mode:
+        char_count = len(script_text)
+        est_duration = char_count * 0.25 + 3
+        print(f"\n📝 脚本: {script_text[:60]}...")
+        print(f"🎭 类型: {script_type} | ⏱️ 预估时长: {est_duration:.0f}s")
+        print(f"🎬 素材: {len(video_files or [])}视频 + {len(audio_files or [])}音频\n")
 
     audio_slots = {}
     video_slots = {}
@@ -117,8 +117,12 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
     if job.errors:
         print(f"   ⚠️: {job.errors[:2]}")
     if json_mode:
-        # JSON输出模式
-        import json as _json
+        # JSON纯输出: 临时重定向print到stderr
+        import json as _json, sys as _sys
+        _real_stdout = _sys.stdout
+        _sys.stdout = _sys.stderr  # 所有print→stderr, stdout留干净给JSON
+        # Restore stdout just for this one JSON dump
+        _sys.stdout = _real_stdout
         output = {
             "success": job.status == "done",
             "script_type": script_type,
@@ -251,6 +255,9 @@ def main():
     if args.verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG, format="%(name)s:%(lineno)d %(message)s")
+    elif args.json:
+        import logging
+        logging.basicConfig(level=logging.WARNING)  # JSON模式静默日志
 
     # 自动识别脚本类型
     script_type = script_type
@@ -302,7 +309,8 @@ def main():
     elif args.interactive or not args.script:
         interactive_mode()
     else:
-        print_banner()
+        if not args.json:
+            print_banner()
         demo_pipeline(args.script, script_type, args.video, args.audio, args.output, args.json)
 
 
