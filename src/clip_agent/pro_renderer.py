@@ -171,7 +171,7 @@ def render_professional(job: RenderJob) -> RenderResult:
             if kb == "zoom_in":
                 vf_blur_bg += f",zoompan=z='min(zoom+0.001,1.3)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
             elif kb == "zoom_out":
-                vf_blur_bg += f",zoompan=z='max(zoom-0.001,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
+                f_blur_bg += f",zoompan=z='max(zoom-0.001,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
 
         # 检查是否有音频轨 → 加loudnorm归一化
         has_audio = _probe_has_audio(fp)
@@ -179,10 +179,16 @@ def render_professional(job: RenderJob) -> RenderResult:
         af_parts = ["anlmdn=s=0.0001", "loudnorm=I=-16:TP=-1.5:LRA=11",
                      "acompressor=threshold=-20dB:ratio=2:attack=5:release=50"] if has_audio else []
 
+        # 🐛 段偏移: 同文件多段需用-ss跳到正确位置
+        seg_start = seg.get("start_sec", seg.get("start", 0))
+        input_args = ["-i", fp]
+        if seg_start > 0.1:
+            input_args = ["-ss", str(seg_start)] + input_args
+
         try:
             cmd = [
                 "ffmpeg","-y","-hide_banner","-loglevel","error",
-                "-i", fp, "-t", str(dur),
+                *input_args, "-t", str(dur),
                 "-vf", vf_blur_bg,
                 "-c:v","libx264","-preset","fast","-crf","18",
             ]
@@ -418,6 +424,7 @@ def _concat_with_xfade(prepared: list, job: RenderJob, font_path: str) -> str:
     inputs = []
     filters = []
     prev_out = "0v"
+    cum_dur = 0.0  # 累计时长·用于xfade offset计算
 
     for i, p in enumerate(prepared):
         dur = p["duration"]
@@ -425,26 +432,29 @@ def _concat_with_xfade(prepared: list, job: RenderJob, font_path: str) -> str:
         if i == 0:
             filters.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
             prev_out = f"v{i}"
+            cum_dur += dur
         else:
             # 自适应转场时长: 基于段标注+节奏
             trans = p.get("transition", "cut")
             if trans == "cut":
-                xfade_dur = 0.0  # 硬切
+                xfade_dur = 0.0
             elif trans == "dissolve":
-                xfade_dur = 0.3  # 标准溶解
+                xfade_dur = 0.3
             elif trans == "fade":
-                xfade_dur = 0.5  # 慢淡出
+                xfade_dur = 0.5
             else:
-                xfade_dur = 0.2  # 快速过渡
-            offset = dur - xfade_dur if xfade_dur > 0 else dur
+                xfade_dur = 0.2
+
+            # 🐛 修复: offset=累计时间-转场时长(不是当前段时长!)
+            offset = cum_dur - xfade_dur if xfade_dur > 0 else cum_dur
             filters.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
             if xfade_dur > 0:
                 filters.append(f"[{prev_out}][v{i}]xfade=transition=fade:duration={xfade_dur}:offset={offset}[xf{i}]")
                 prev_out = f"xf{i}"
             else:
-                # 硬切: 直接concat(通过overlay实现无缝切换)
                 filters.append(f"[{prev_out}][v{i}]concat=n=2:v=1[xf{i}]")
                 prev_out = f"xf{i}"
+            cum_dur += dur
 
     # Audio: concat all audio tracks (only if inputs have audio)
     has_audio = _probe_has_audio(prepared[0]["file"]) if prepared else False

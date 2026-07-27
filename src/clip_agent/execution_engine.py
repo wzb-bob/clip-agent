@@ -799,11 +799,17 @@ JSON格式:
                 video_segs = []
                 vs = job.video_slots or {}
                 for i, s in enumerate(unified_job.sentences):
-                    vf = vs.get(s.index if hasattr(s, 'index') else i+1) or vs.get(i+1)
+                    # 按index查找slot，找不到复用第一个可用文件
+                    vf = vs.get(s.index if hasattr(s, 'index') else i+1)
+                    if not vf or not os.path.exists(vf):
+                        vf = vs.get(i+1)  # fallback by position
+                    if not vf or not os.path.exists(vf):
+                        vf = next((v for v in vs.values() if os.path.exists(v)), None)  # reuse any
                     if not vf or not os.path.exists(vf):
                         continue
                     video_segs.append({
                         "file": vf, "duration": s.duration_sec,
+                        "start_sec": s.start_sec,  # 🐛 关键: 源文件偏移
                         "broll": s.is_broll,
                         "text": s.text_overlay,
                         "color_grade": default_color,
