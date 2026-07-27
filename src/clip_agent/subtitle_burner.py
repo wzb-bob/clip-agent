@@ -36,7 +36,7 @@ def burn_subtitles(video_path: str, segments: list[dict], output_path: str,
         cmd = [
             "ffmpeg","-y","-hide_banner","-loglevel","error",
             "-i", video_path,
-            "-vf", f"subtitles={srt_path}:force_style='FontSize={font_size},PrimaryColour={color},OutlineColour=&H80000000,Outline=3,Shadow=2,BorderStyle=1'",
+            "-vf", f"subtitles={srt_path}",
             "-c:v","libx264","-preset","fast","-crf","18",
             "-c:a","copy",
             tmp
