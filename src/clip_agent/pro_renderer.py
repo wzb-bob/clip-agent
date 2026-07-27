@@ -202,6 +202,7 @@ def render_professional(job: RenderJob) -> RenderResult:
 
         prepared.append({
             "file": tmp, "duration": dur,
+            "start_sec": seg.get("start_sec", seg.get("start", 0)),
             "broll": seg.get("broll", False),
             "text": seg.get("text", ""),
             "text_position": seg.get("text_position", "center"),
@@ -230,9 +231,20 @@ def render_professional(job: RenderJob) -> RenderResult:
     if broll_indices:
         working = _overlay_broll(working, prepared, broll_indices, job)
 
-    # ===== Step 4: 文字烧录(淡入动画) =====
-    if font_path:
-        working = _burn_text_with_animation(working, prepared, font_path, total_dur)
+    # ===== Step 4: SRT字幕烧录(替代drawtext·更可靠) =====
+    try:
+        from .subtitle_burner import burn_subtitles
+        sub_segs = [{"start_sec": p.get("start_sec", 0), "duration": p["duration"],
+                      "text": p["text"]} for p in prepared if p.get("text")]
+        if sub_segs:
+            sub_out = tempfile.mktemp(suffix="_sub.mp4")
+            result = burn_subtitles(working, sub_segs, sub_out)
+            if result and os.path.exists(result):
+                working = result
+    except Exception:
+        # Fallback to drawtext
+        if font_path:
+            working = _burn_text_with_animation(working, prepared, font_path, total_dur)
 
     # ===== Step 5: 全局淡入淡出 =====
     fade_out = tempfile.mktemp(suffix="_fade.mp4")
