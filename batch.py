@@ -28,6 +28,13 @@ except ImportError:
     pass
 
 
+def _detect_type(script: str) -> str:
+    if any(kw in script for kw in ["块","元","价","团购","优惠"]): return "团购售卖"
+    if any(kw in script for kw in ["故事","创业","老板","年","坚持","凌晨"]): return "老板IP"
+    if any(kw in script for kw in ["地址","导航","排队","门头","只此"]): return "引流进店"
+    return "团购售卖"
+
+
 def process_one(script: str, stype: str, videos: list[str], outdir: str, idx: int) -> dict:
     """处理单条脚本"""
     from clip_agent.execution_engine import quick_direct
@@ -89,6 +96,11 @@ def main():
     else:
         print(f"❌ 不支持的文件格式: {ip.suffix}")
         return
+
+    # 自动识别未指定的脚本类型
+    for i, (script, stype, videos) in enumerate(scripts):
+        if stype in ("auto", "", None):
+            scripts[i] = (script, _detect_type(script), videos)
 
     if not scripts:
         print("❌ 无脚本")
