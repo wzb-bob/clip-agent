@@ -316,6 +316,8 @@ def render_professional(job: RenderJob) -> RenderResult:
             return RenderResult(False, output, total_dur, round(size_mb, 1), round(elapsed, 1), "输出文件损坏·ffprobe验证失败")
         fmt = _json.loads(r.stdout).get("format", {})
         actual_dur = float(fmt.get("duration", 0))
+        actual_bitrate = int(fmt.get("bit_rate", 0)) // 1000 if fmt.get("bit_rate") else 0
+        logger.debug("输出验证: %.1fs·%.1fMB·%dkbps·可播放", actual_dur, size_mb, actual_bitrate)
         if actual_dur < 0.5:
             return RenderResult(False, output, total_dur, round(size_mb, 1), round(elapsed, 1), f"输出时长异常({actual_dur:.1f}s)")
     except Exception:
