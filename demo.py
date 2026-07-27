@@ -252,6 +252,7 @@ def main():
     parser.add_argument("--showcase", "-s", action="store_true", help="演示模式: 全流程+HTML报告")
     parser.add_argument("--json", action="store_true", help="JSON输出(机器可读)")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
+    parser.add_argument("--quiet", "-q", action="store_true", help="静默模式·仅输出结果")
     args = parser.parse_args()
 
     if args.verbose:
