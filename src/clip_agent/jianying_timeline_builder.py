@@ -98,6 +98,48 @@ def _build_manual_draft(segments, talking_video, output_dir, project_name):
     return draft_path
 
 
+def validate_draft(draft_path: str) -> dict:
+    """验证草稿JSON结构完整性"""
+    result = {"valid": False, "issues": [], "segments": 0}
+    try:
+        draft_file = draft_path
+        if os.path.isdir(draft_path):
+            draft_file = os.path.join(draft_path, "draft_content.json")
+        if not os.path.exists(draft_file):
+            result["issues"].append("draft_content.json不存在")
+            return result
+
+        with open(draft_file, encoding="utf-8") as f:
+            data = json.loads(f.read())
+
+        if "platform" not in data:
+            result["issues"].append("缺少platform字段")
+        if "materials" not in data:
+            result["issues"].append("缺少materials字段")
+        if "tracks" in data:
+            for track in data["tracks"]:
+                segs = track.get("segments", [])
+                result["segments"] += len(segs)
+                for seg in segs:
+                    if "start" not in seg or "duration" not in seg:
+                        result["issues"].append(f"段{seg.get('id','?')}缺少start/duration")
+        elif "content" not in data:
+            result["issues"].append("缺少tracks或content字段")
+
+        # 检查AI包装标记
+        ai_meta = data.get("content", {}).get("ai_packaging_meta", {})
+        if not ai_meta.get("draft_is_ai_packaging_used", True):
+            result["ai_packaging_ready"] = True  # 标记为可触发智能包装
+
+        result["valid"] = len(result["issues"]) == 0
+        result["version"] = data.get("draft_info", {}).get("version", "unknown")
+    except json.JSONDecodeError as e:
+        result["issues"].append(f"JSON格式错误: {e}")
+    except Exception as e:
+        result["issues"].append(str(e))
+    return result
+
+
 def export_draft_zip(draft_dir: str) -> str:
     """将草稿目录打包为ZIP(方便下载)"""
     zip_path = draft_dir.rstrip("/\\") + ".zip"

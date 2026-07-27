@@ -87,6 +87,19 @@ def run_four_category_pipeline(
         draft_path = _generate_jianying_draft(timeline_segs, talking_video, output_dir)
 
     elapsed = time.time() - t0
+    # 验证草稿
+    validation = {}
+    if draft_path:
+        try:
+            from .jianying_timeline_builder import validate_draft
+            validation = validate_draft(draft_path)
+            if not validation.get("valid"):
+                logger.warning("草稿验证: %s", validation.get("issues", []))
+            else:
+                logger.info("草稿验证: ✅ %d段·v%s", validation.get("segments", 0), validation.get("version", "?"))
+        except Exception:
+            pass
+
     logger.info("四类管道完成: %d段·%.1fs·%.1fs", len(timeline_segs), total_dur, elapsed)
 
     return JianYingTimeline(
