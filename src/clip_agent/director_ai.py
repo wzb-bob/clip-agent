@@ -503,9 +503,9 @@ def direct(
             {"role": s.segment_role, "shot": s.shot_type} for s in fused.segments[:6]
         ], ensure_ascii=False)
 
-        # Inject feedback context into prompt
+        # Inject feedback context prominently into prompt
         if feedback_context:
-            rules_summary = f"[反馈]{feedback_context} | [规则]{rules_summary}"
+            rules_summary = f"[历史学习·优先参考]{feedback_context} | [兜底规则]{rules_summary}"
 
         ai_plan = ai_director_decision(
             script_type, sem_summary, audio_summary, video_summary, rules_summary,
