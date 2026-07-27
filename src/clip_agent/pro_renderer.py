@@ -289,8 +289,28 @@ def render_professional(job: RenderJob) -> RenderResult:
         ], timeout=30)
         working = preview_out
 
+    # 输出验证: 文件存在·非零大小·可播放
+    if not os.path.exists(output) or os.path.getsize(output) == 0:
+        return RenderResult(False, output, total_dur, 0, round(time.time() - t0, 1), "输出文件为空或不存在")
+
     elapsed = time.time() - t0
-    size_mb = os.path.getsize(output) / (1024*1024) if os.path.exists(output) else 0
+    size_mb = os.path.getsize(output) / (1024*1024)
+
+    # 快速验证可播放性(ffprobe)
+    try:
+        import json as _json
+        r = subprocess.run(
+            ["ffprobe","-v","quiet","-print_format","json","-show_format", output],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return RenderResult(False, output, total_dur, round(size_mb, 1), round(elapsed, 1), "输出文件损坏·ffprobe验证失败")
+        fmt = _json.loads(r.stdout).get("format", {})
+        actual_dur = float(fmt.get("duration", 0))
+        if actual_dur < 0.5:
+            return RenderResult(False, output, total_dur, round(size_mb, 1), round(elapsed, 1), f"输出时长异常({actual_dur:.1f}s)")
+    except Exception:
+        pass  # ffprobe验证失败不阻塞·文件可尝试播放
 
     # 清理临时文件(预处理段+中间产物)
     for p in prepared:
