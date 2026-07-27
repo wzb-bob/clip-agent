@@ -161,13 +161,29 @@ def validate_plan(segments: list, script_type: str = "团购售卖") -> dict:
 
 
 # Helpers for accessing segment attributes (works with dict, dataclass, or object)
-def _get_shot(s): return getattr(s, "shot_type", None) or s.get("shot_type", "") if isinstance(s, dict) else (getattr(s, "required_shot", "") if hasattr(s, "required_shot") else "")
-def _get_start(s): return getattr(s, "start_sec", None) or s.get("start_sec", 0) if isinstance(s, dict) else 0
-def _get_duration(s): return getattr(s, "duration_sec", None) or s.get("duration_sec", 3.0) if isinstance(s, dict) else 3.0
-def _get_file(s): return getattr(s, "video_file", None) or s.get("video_file", "") if isinstance(s, dict) else ""
-def _get_broll(s): return getattr(s, "is_broll", None) or s.get("is_broll", False) if isinstance(s, dict) else False
-def _get_trans_out(s): return getattr(s, "transition_out", "cut") if hasattr(s, "transition_out") else "cut"
+def _get_shot(s):
+    if isinstance(s, dict): return s.get("shot_type", "") or s.get("required_shot", "")
+    return getattr(s, "required_shot", "") or getattr(s, "shot_type", "")
+
+def _get_start(s):
+    if isinstance(s, dict): return s.get("start_sec", 0)
+    return getattr(s, "start_sec", 0)
+
+def _get_duration(s):
+    if isinstance(s, dict): return s.get("duration_sec", 3.0)
+    return getattr(s, "duration_sec", 3.0)
+def _get_file(s):
+    if isinstance(s, dict): return s.get("video_file", "")
+    return getattr(s, "video_file", "")
+
+def _get_broll(s):
+    if isinstance(s, dict): return s.get("is_broll", False)
+    return getattr(s, "is_broll", False)
+
+def _get_trans_out(s): return getattr(s, "transition_out", "cut")
+
 def _get_role(s, idx, total): return "hook" if idx==0 else ("cta" if idx==total-1 else "body")
+
 def _set_shot(s, shot):
-    if hasattr(s, "shot_type"): s.shot_type = shot
-    elif hasattr(s, "required_shot"): s.required_shot = shot
+    if hasattr(s, "required_shot"): s.required_shot = shot
+    elif hasattr(s, "shot_type"): s.shot_type = shot
