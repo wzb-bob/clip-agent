@@ -378,11 +378,24 @@ def ai_director_decision(
 
         model = get_model_name("deepseek") or "deepseek-v4-flash"
         t0 = time.time()
-        result = chat_via_gateway(
-            provider="deepseek", model=model,
-            system="你是短视频剪辑总导演。综合所有信号做决策。只返回JSON。",
-            user=prompt, temperature=0.2, max_tokens=2000,
-        )
+
+        # 重试机制: 失败等2秒再试1次
+        result = None
+        for attempt in range(2):
+            try:
+                result = chat_via_gateway(
+                    provider="deepseek", model=model,
+                    system="你是短视频剪辑总导演。综合所有信号做决策。只返回JSON。",
+                    user=prompt, temperature=0.2, max_tokens=2000,
+                )
+                if result and (isinstance(result, dict) and result.get("content")):
+                    break
+            except Exception:
+                if attempt == 0:
+                    time.sleep(2)
+                    logger.debug("AI导演重试...")
+                else:
+                    raise
         content = result.get("content", "") if isinstance(result, dict) else str(result)
 
         m = re.search(r'\{.*\}', content, re.DOTALL)
