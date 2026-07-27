@@ -232,7 +232,12 @@ def main():
     parser.add_argument("--compare", "-c", action="store_true", help="对比模式: 旧关键词 vs 新AI导演")
     parser.add_argument("--showcase", "-s", action="store_true", help="演示模式: 全流程+HTML报告")
     parser.add_argument("--json", action="store_true", help="JSON输出(机器可读)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     args = parser.parse_args()
+
+    if args.verbose:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s:%(lineno)d %(message)s")
 
     # 自动识别脚本类型
     script_type = script_type
