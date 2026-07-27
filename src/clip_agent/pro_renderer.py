@@ -537,14 +537,14 @@ def _burn_text_with_animation(working: str, prepared: list, font_path: str, tota
         elif position == "bottom": y_pos = "h*0.85"
         else: y_pos = "h*0.4"
 
-        # Font size
+        # Font size: 抖音风格·大字醒目
         text_len = len(text_raw)
-        font_size = 42 if text_len > 10 else (56 if text_len > 6 else 72)
+        font_size = 52 if text_len > 10 else (64 if text_len > 6 else 80)
 
         # 🆕 逐词动画: 每个词单独drawtext·递增delay
         words = text_raw.replace("！","").replace("!","").split()
         if len(words) >= 2:
-            word_delay = min(0.15, dur / len(words))  # 每词延迟
+            word_delay = min(0.15, dur / len(words))
             for wi, w in enumerate(words):
                 word_start = acc + wi * word_delay
                 word_end = acc + dur
@@ -553,16 +553,17 @@ def _burn_text_with_animation(working: str, prepared: list, font_path: str, tota
                     f"fontsize={font_size}:fontcolor={color}@0.95:"
                     f"x=(w-tw)/2:y={y_pos}:"
                     f"enable='between(t,{word_start},{word_end})':"
-                    f"bordercolor=black@0.5:borderw=3"
+                    f"bordercolor=black@0.6:borderw=5:"
+                    f"shadowcolor=black@0.4:shadowx=3:shadowy=3"
                 )
         else:
-            # Single word — just show it
             text_filters.append(
                 f"drawtext=text='{text_raw}':fontfile='{font_name}':"
                 f"fontsize={font_size}:fontcolor={color}@0.95:"
                 f"x=(w-tw)/2:y={y_pos}:"
                 f"enable='between(t,{acc},{acc+dur})':"
-                f"bordercolor=black@0.5:borderw=3"
+                f"bordercolor=black@0.6:borderw=5:"
+                f"shadowcolor=black@0.4:shadowx=3:shadowy=3"
             )
         acc += dur
 
