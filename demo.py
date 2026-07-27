@@ -143,7 +143,12 @@ def demo_pipeline(script_text, script_type, video_files, audio_files, output_dir
         for s in job.sentences[:8]:
             b = "🎬B-roll" if s.is_broll else "🎤口播"
             ov = f" [{s.text_overlay}]" if s.text_overlay else ""
-            print(f"  {b} {s.start_sec:5.1f}s {s.required_shot:3s} {s.text[:20]:20s}{ov}")
+            sp = getattr(s, "speed", "normal")
+            kb = getattr(s, "ken_burns", "")
+            fx = ""
+            if sp != "normal": fx += f" {sp}"
+            if kb: fx += f" {kb}"
+            print(f"  {b} {s.start_sec:5.1f}s {s.required_shot:3s}{fx:15s} {s.text[:20]:20s}{ov}")
 
         # B-roll拍摄清单
         ba = dc.get("broll_assignments", [])
