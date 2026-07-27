@@ -281,6 +281,27 @@ def main():
         else:
             script_type = "团购售卖"
 
+    if args.jianying and args.script:
+        print_banner()
+        from clip_agent.four_category_pipeline import run_four_category_pipeline, CategoryMaterials
+        from clip_agent.jianying_timeline_builder import export_draft_zip
+
+        materials = CategoryMaterials(
+            talking=args.talking or args.video,
+            environment=args.env, product=args.product, cta=args.cta,
+        )
+        outdir = args.output or f"./jianying_draft_{int(time.time())}"
+        timeline = run_four_category_pipeline(args.script, materials, output_dir=outdir)
+        print(f"\n📋 {len(timeline.segments)}段·{timeline.total_duration:.1f}s·{len(timeline.breath_points)}气口")
+        for s in timeline.segments[:8]:
+            b = "🎬B" if s.is_broll else "🎤A"
+            print(f"  {b} {s.start_sec:.1f}s [{s.material_category}] {s.script_text[:30]}")
+        if timeline.draft_path:
+            zip_path = export_draft_zip(timeline.draft_path)
+            print(f"\n📥 草稿ZIP: {zip_path}")
+            print("💡 解压→拖入剪映→智能包装→出片")
+        return
+
     if args.showcase and args.script:
         # 演示模式: 完整管线 + 诊断面板 + HTML报告
         print_banner()

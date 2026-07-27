@@ -172,27 +172,28 @@ def _build_timeline(
         role = seg.get("role", "body")
         dur = seg.get("duration_sec", 3.0)
 
-        # 素材选择
-        if role == "hook" or role == "cta" or (i == 0) or (i == len(segments) - 1):
-            # 开头/结尾 → 口播主轨
+        is_first = (i == 0)
+        is_last = (i == len(segments) - 1)
+
+        # 素材选择: 开头/结尾=口播·中段交替B-roll
+        if is_first or is_last:
             mat_file = talking_video
             mat_cat = "talking"
             is_broll = False
-        elif role == "body" and seg.get("broll_needed", True):
-            # 中段 → 交替使用环境和产品空镜
-            if env_idx < len(materials.environment) and i % 2 == 0:
-                mat_file = materials.environment[env_idx % len(materials.environment)]
-                mat_cat = "environment"
-                env_idx += 1
-            elif prod_idx < len(materials.product):
-                mat_file = materials.product[prod_idx % len(materials.product)]
-                mat_cat = "product"
-                prod_idx += 1
-            else:
-                mat_file = talking_video  # 兜底
-                mat_cat = "talking"
+        elif i % 2 == 1 and env_idx < len(materials.environment):
+            # 奇数段→环境B-roll
+            mat_file = materials.environment[env_idx % len(materials.environment)]
+            mat_cat = "environment"
+            env_idx += 1
+            is_broll = True
+        elif prod_idx < len(materials.product):
+            # 偶数段→产品B-roll(有产品素材时)
+            mat_file = materials.product[prod_idx % len(materials.product)]
+            mat_cat = "product"
+            prod_idx += 1
             is_broll = True
         else:
+            # 兜底: 口播主轨
             mat_file = talking_video
             mat_cat = "talking"
             is_broll = False
