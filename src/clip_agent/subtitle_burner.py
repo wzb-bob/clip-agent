@@ -1,8 +1,10 @@
 """
-字幕烧录 · SRT格式 · 比drawtext更可靠
+字幕烧录 · ASS格式 · FFmpeg原生支持
 
-用法: burn_subtitles(video_path, segments, output_path)
-segments: [{"start_sec":0,"duration_sec":2.5,"text":"大字内容"}]
+ASS格式比SRT更可靠:
+- 原生支持样式(字号/颜色/边框/阴影)
+- 不需force_style参数(避免Windows兼容问题)
+- FFmpeg ass滤镜处理中文字体更稳定
 """
 from __future__ import annotations
 import logging, os, subprocess, tempfile
@@ -12,54 +14,54 @@ logger = logging.getLogger(__name__)
 
 
 def burn_subtitles(video_path: str, segments: list[dict], output_path: str,
-                   font_size: int = 56, color: str = "&H00FFFFFF") -> str | None:
-    """
-    生成SRT字幕 → FFmpeg subtitles滤镜烧录。
-
-    SRT格式比drawtext更可靠:
-    - 不需要指定fontfile路径(FFmpeg自动找系统字体)
-    - 支持中文字符
-    - 支持样式(粗体/边框/阴影)
-    """
+                   font_size: int = 56) -> str | None:
     if not segments:
         return None
 
-    # 1. 生成SRT文件
-    srt_path = tempfile.mktemp(suffix=".srt")
+    # 1. 生成ASS字幕文件
     ass_path = tempfile.mktemp(suffix=".ass")
-    _generate_srt(segments, srt_path)
-    _generate_ass_style(ass_path, font_size, color)
+    _generate_ass(segments, ass_path, font_size)
 
-    # 2. FFmpeg烧录(用正斜杠·Windows兼容)
+    # 2. FFmpeg ass滤镜烧录
     tmp = tempfile.mktemp(suffix=".mp4")
-    safe_path = srt_path.replace("\\", "/").replace(":", "\\:")
+    safe_ass = ass_path.replace("\\", "/")
     try:
-        cmd = [
+        subprocess.run([
             "ffmpeg","-y","-hide_banner","-loglevel","error",
             "-i", video_path,
-            "-vf", f"subtitles='{safe_path}'",
+            "-vf", f"ass='{safe_ass}'",
             "-c:v","libx264","-preset","fast","-crf","18",
             "-c:a","copy",
             tmp
-        ]
-        subprocess.run(cmd, timeout=120)
+        ], timeout=120)
         if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
-            # Replace original
             os.replace(tmp, output_path)
             return output_path
     except Exception as e:
-        logger.warning("字幕烧录失败: %s", e)
+        logger.warning("ASS字幕烧录失败: %s", e)
     finally:
-        for f in [srt_path, ass_path, tmp]:
+        for f in [ass_path, tmp]:
             try: os.remove(f)
             except: pass
     return None
 
 
-def _generate_srt(segments: list[dict], output_path: str):
-    """生成SRT字幕文件"""
-    lines = []
-    idx = 1
+def _generate_ass(segments: list[dict], output_path: str, font_size: int):
+    """生成ASS字幕文件·带完整样式头"""
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Microsoft YaHei,{font_size},&H00FFFFFF,&H000000FF,&H80000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,2,2,50,50,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    lines = [header]
     cur_sec = 0.0
 
     for seg in segments:
@@ -72,30 +74,21 @@ def _generate_srt(segments: list[dict], output_path: str):
         start = seg.get("start_sec", cur_sec)
         end = start + dur
 
-        # SRT时间格式: HH:MM:SS,mmm
-        start_ts = _sec_to_srt(start)
-        end_ts = _sec_to_srt(end)
+        start_ts = _sec_to_ass(start)
+        end_ts = _sec_to_ass(end)
 
-        lines.append(f"{idx}")
-        lines.append(f"{start_ts} --> {end_ts}")
-        lines.append(text)
-        lines.append("")
-        idx += 1
+        # ASS事件行
+        lines.append(f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}")
         cur_sec = end
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
 
-def _generate_ass_style(output_path: str, font_size: int, color: str):
-    """生成ASS样式头(备用)"""
-    pass  # SRT force_style足够, 暂不需要ASS
-
-
-def _sec_to_srt(sec: float) -> str:
-    """秒→SRT时间戳"""
+def _sec_to_ass(sec: float) -> str:
+    """秒→ASS时间戳 H:MM:SS.cc"""
     h = int(sec // 3600)
     m = int((sec % 3600) // 60)
     s = int(sec % 60)
-    ms = int((sec % 1) * 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    cs = int((sec % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
