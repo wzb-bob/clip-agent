@@ -111,6 +111,15 @@ def render_professional(job: RenderJob) -> RenderResult:
     if not job.segments:
         return RenderResult(False, "", 0, 0, 0, "无渲染片段")
 
+    # 段时长校验: <0.3s补齐·>60s警告
+    for seg in job.segments:
+        d = seg.get("duration", 3.0)
+        if d < 0.3:
+            seg["duration"] = 0.5  # 最短0.5秒
+            logger.warning("段过短(%.1fs)→补齐0.5s", d)
+        elif d > 60:
+            logger.warning("段过长(%.1fs)·建议切分", d)
+
     t0 = time.time()
     output = job.output_path
     font_path = _find_font()
