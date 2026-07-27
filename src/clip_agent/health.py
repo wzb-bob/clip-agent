@@ -40,6 +40,8 @@ def check_all() -> dict:
         results["version"] = {"healthy": True, "detail": "unknown"}
     # Modules
     results["modules"] = _check_modules()
+    # Performance benchmark
+    results["perf"] = _check_perf()
     # AI Services
     results["ai_services"] = _check_ai_services()
 
@@ -111,6 +113,27 @@ def _check_modules() -> dict:
         return {"healthy": True, "detail": "核心模块导入成功(quick_execute+quick_direct)", "latency_ms": round((time.time()-t0)*1000)}
     except Exception as e:
         return {"healthy": False, "detail": str(e)[:100]}
+
+
+def _check_perf() -> dict:
+    """快速渲染基准测试"""
+    t0 = time.time()
+    try:
+        import tempfile, subprocess
+        tmp = tempfile.mktemp(suffix=".mp4")
+        subprocess.run([
+            "ffmpeg","-y","-hide_banner","-loglevel","error",
+            "-f","lavfi","-i","color=c=red:size=540x960:d=1",
+            "-c:v","libx264","-preset","ultrafast","-crf","28",
+            "-frames:v","30", tmp
+        ], timeout=10)
+        elapsed = time.time() - t0
+        if os.path.exists(tmp):
+            os.remove(tmp)
+            return {"healthy": True, "detail": f"渲染基准: {elapsed*1000:.0f}ms/30帧(ultrafast)", "latency_ms": round(elapsed*1000)}
+    except Exception:
+        pass
+    return {"healthy": False, "detail": "渲染基准测试失败"}
 
 
 def _check_ai_services() -> dict:
