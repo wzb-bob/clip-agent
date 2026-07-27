@@ -483,6 +483,22 @@ def direct(
         ], ensure_ascii=False)
         audio_summary = json.dumps(audio_segments[:8], ensure_ascii=False)
         video_summary = json.dumps(video_scenes[:6], ensure_ascii=False)
+
+        # 🆕 提取GLM-4V深标注数据(场景类型/景别/情绪/质量)
+        glm_annotations = []
+        for vs in video_scenes:
+            deep = vs.get("deep_annotations", [])
+            for d in deep[:4]:
+                glm_annotations.append({
+                    "t": d.get("start_sec", 0),
+                    "scene": d.get("scene_type", "?"),
+                    "shot": d.get("shot_type", "?"),
+                    "emotion": d.get("emotion", "?"),
+                    "quality": d.get("quality_score", 0),
+                })
+        if glm_annotations:
+            video_summary = f"[GLM深标注]{json.dumps(glm_annotations, ensure_ascii=False)} | [场景]{video_summary}"
+
         rules_summary = json.dumps([
             {"role": s.segment_role, "shot": s.shot_type} for s in fused.segments[:6]
         ], ensure_ascii=False)
