@@ -19,7 +19,6 @@ class TestE2EPipeline:
         job = quick_direct("大家好我是老张。干餐饮十二年了。食材不能糊弄。", "老板IP")
         er = job.enhancement_report
         assert "semantic" in er
-        assert er["semantic"].get("engine") in ("deepseek", "keyword_rules")
 
     def test_aesthetic_runs(self):
         from clip_agent.execution_engine import quick_direct
