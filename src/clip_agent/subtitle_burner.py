@@ -30,13 +30,14 @@ def burn_subtitles(video_path: str, segments: list[dict], output_path: str,
     _generate_srt(segments, srt_path)
     _generate_ass_style(ass_path, font_size, color)
 
-    # 2. FFmpeg烧录
+    # 2. FFmpeg烧录(用正斜杠·Windows兼容)
     tmp = tempfile.mktemp(suffix=".mp4")
+    safe_path = srt_path.replace("\\", "/").replace(":", "\\:")
     try:
         cmd = [
             "ffmpeg","-y","-hide_banner","-loglevel","error",
             "-i", video_path,
-            "-vf", f"subtitles={srt_path}",
+            "-vf", f"subtitles='{safe_path}'",
             "-c:v","libx264","-preset","fast","-crf","18",
             "-c:a","copy",
             tmp
