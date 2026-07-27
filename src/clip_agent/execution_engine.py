@@ -607,9 +607,17 @@ JSON格式:
                         x264_path = str(Path(path).parent / f"_x264_{Path(path).name}.mp4")
                         if not os.path.exists(x264_path):
                             logger.info("HEVC→x264: %s", Path(path).name)
-                            subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
-                                "-i",path,"-c:v","libx264","-preset","fast","-crf","18","-c:a","aac",x264_path],
-                                timeout=300)
+                            # Add silent audio track if source has no audio → prevents filter crashes
+                            audio_args = ["-c:a","aac","-b:a","192k"] if any(s.get("codec_type")=="audio" for s in streams) else ["-f","lavfi","-i","anullsrc=r=44100:cl=mono","-c:a","aac","-b:a","32k","-shortest"]
+                            if len(audio_args) > 4:  # anullsrc approach
+                                subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
+                                    "-i",path,"-f","lavfi","-i","anullsrc=r=44100:cl=mono",
+                                    "-c:v","libx264","-preset","fast","-crf","18",
+                                    "-c:a","aac","-b:a","32k","-shortest",x264_path], timeout=300)
+                            else:
+                                subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
+                                    "-i",path,"-c:v","libx264","-preset","fast","-crf","18",
+                                    "-c:a","aac","-b:a","192k",x264_path], timeout=300)
                         if os.path.exists(x264_path):
                             job.video_slots[idx] = x264_path
                 except Exception:
