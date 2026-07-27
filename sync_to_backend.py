@@ -9,7 +9,7 @@ from pathlib import Path
 SRC = Path(__file__).parent / "src" / "clip_agent"
 DST = Path(r"c:\Users\wangzibo\enterprise-agent-content\acquisition-backend\app\services\clip_agent")
 
-EXCLUDE = {"__init__.py"}  # 后端 __init__.py 有不同导出, 不覆盖
+EXCLUDE = {"__init__.py", ".env", ".env.example", ".gitignore"}  # 不覆盖敏感/配置
 
 def sync(dry_run=False):
     if not DST.exists():
