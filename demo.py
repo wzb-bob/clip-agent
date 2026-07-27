@@ -42,10 +42,18 @@ def check_env():
 
 
 def print_banner():
-    print("""
+    # 快速依赖检查
+    import shutil
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
+    deepseek_ok = bool(os.getenv("DEEPSEEK_API_KEY"))
+    kimi_ok = bool(os.getenv("KIMI_API_KEY"))
+
+    print(f"""
 ╔══════════════════════════════════════════════╗
 ║       🎬 长益剪辑Agent · 演示模式            ║
 ║   AI导演: 语义+视频+音频 → 一键成片          ║
+╠══════════════════════════════════════════════╣
+║ FFmpeg: {'✅' if ffmpeg_ok else '❌'}  DeepSeek: {'✅' if deepseek_ok else '⚠️'}  Kimi: {'✅' if kimi_ok else '⚠️'}                 ║
 ╚══════════════════════════════════════════════╝""")
 
 
