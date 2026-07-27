@@ -34,7 +34,7 @@ def check_aesthetics(segments: list, script_type: str = "团购售卖") -> list[
     """
     issues = []
 
-    if len(segments) < 2:
+    if len(segments) == 0:
         return issues
 
     # R1: 相邻3个相同景别
