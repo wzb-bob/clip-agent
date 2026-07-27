@@ -594,6 +594,27 @@ JSON格式:
                     except Exception as e:
                         logger.debug("音频理解跳过: %s", e)
 
+        # 0.5: HEVC自动转x264(编解码兼容性)
+        for idx, path in list(job.video_slots.items()):
+            if os.path.exists(path):
+                try:
+                    import json as _json
+                    r = subprocess.run(["ffprobe","-v","quiet","-print_format","json","-show_streams",path],
+                                     capture_output=True, text=True, timeout=10)
+                    streams = _json.loads(r.stdout).get("streams",[])
+                    is_hevc = any(s.get("codec_name") in ("hevc","h265") for s in streams)
+                    if is_hevc:
+                        x264_path = str(Path(path).parent / f"_x264_{Path(path).name}.mp4")
+                        if not os.path.exists(x264_path):
+                            logger.info("HEVC→x264: %s", Path(path).name)
+                            subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
+                                "-i",path,"-c:v","libx264","-preset","fast","-crf","18","-c:a","aac",x264_path],
+                                timeout=300)
+                        if os.path.exists(x264_path):
+                            job.video_slots[idx] = x264_path
+                except Exception:
+                    pass
+
         # 1c. 视频分析 (Kimi K2.6→Kimi轻量→OpenCV降级)
         video_slots = job.video_slots or {}
         for idx, path in video_slots.items():
