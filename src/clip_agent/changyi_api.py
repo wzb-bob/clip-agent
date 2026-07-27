@@ -49,6 +49,12 @@ class ChangyiAPI:
     def clip(self, script: str, script_type: str = "auto",
              videos: list[str] = None, output: str = "") -> APIResult:
         """视频素材 → AI导演出片"""
+        # 输入校验
+        if not script or len(script.strip()) < 3:
+            return APIResult(False, "clip", error="脚本太短(需≥3字)")
+        if len(script) > 5000:
+            return APIResult(False, "clip", error="脚本过长(限5000字)")
+
         t0 = time.time()
         try:
             if script_type == "auto":
@@ -74,6 +80,11 @@ class ChangyiAPI:
     def digital_human(self, photo: str, script: str, script_type: str = "老板IP",
                       output: str = "") -> APIResult:
         """照片+脚本 → 数字人口播视频"""
+        if not photo or not os.path.exists(photo):
+            return APIResult(False, "digital_human", error="照片文件不存在")
+        if not script or len(script.strip()) < 3:
+            return APIResult(False, "digital_human", error="脚本太短(需≥3字)")
+
         t0 = time.time()
         try:
             from .digital_human import create_and_clip
