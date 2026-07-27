@@ -292,14 +292,23 @@ def main():
         )
         outdir = args.output or f"./jianying_draft_{int(time.time())}"
         timeline = run_four_category_pipeline(args.script, materials, output_dir=outdir)
-        print(f"\n📋 {len(timeline.segments)}段·{timeline.total_duration:.1f}s·{len(timeline.breath_points)}气口")
-        for s in timeline.segments[:8]:
-            b = "🎬B" if s.is_broll else "🎤A"
-            print(f"  {b} {s.start_sec:.1f}s [{s.material_category}] {s.script_text[:30]}")
+        print(f"\n╔══════════════════════════════════════╗")
+        print(f"║   🎬 剪映草稿 v5.0                    ║")
+        print(f"╠══════════════════════════════════════╣")
+        print(f"║   {len(timeline.segments)}段·{timeline.total_duration:.0f}s·{len(timeline.breath_points)}气口{'':8s}║")
+        talking = sum(1 for s in timeline.segments if not s.is_broll)
+        broll = sum(1 for s in timeline.segments if s.is_broll)
+        print(f"║   口播:{talking}段·B-roll:{broll}段{'':16s}║")
+        print(f"╠══════════════════════════════════════╣")
+        for s in timeline.segments[:6]:
+            b = "🎬B-roll" if s.is_broll else "🎤口播"
+            mat_name = Path(s.material_file).name[:15] if s.material_file else "?"
+            print(f"║ {b} {s.start_sec:5.1f}s {mat_name:15s} {s.script_text[:25]}".ljust(43) + "║")
+        print(f"╚══════════════════════════════════════╝")
         if timeline.draft_path:
             zip_path = export_draft_zip(timeline.draft_path)
-            print(f"\n📥 草稿ZIP: {zip_path}")
-            print("💡 解压→拖入剪映→智能包装→出片")
+            print(f"\n📥 {zip_path}")
+            print("💡 解压→拖入剪映→点「智能包装」→一键出片")
         return
 
     if args.showcase and args.script:
