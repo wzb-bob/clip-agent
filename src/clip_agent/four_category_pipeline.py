@@ -103,24 +103,27 @@ def _detect_breath_points(video_path: str) -> list[dict]:
     """Whisper气口检测 → 返回切点列表"""
     points = []
     try:
-        from .media_understanding import understand_audio
-        audio_data = understand_audio(video_path)
-        for seg in audio_data.get("segments", []):
+        # 直接用execution_engine的Whisper逻辑
+        import whisper
+        model = whisper.load_model("small")
+        result = model.transcribe(video_path, word_timestamps=True)
+        word_times = []
+        for seg in result.get("segments", []):
             for w in seg.get("words", []):
-                w["start"] = round(w.get("start", 0), 2)
-        # 计算句间停顿
-        all_words = []
-        for seg in audio_data.get("segments", []):
-            all_words.extend(seg.get("words", []))
-        for i in range(1, len(all_words)):
-            gap_ms = int((all_words[i]["start"] - all_words[i-1].get("end", all_words[i-1]["start"])) * 1000)
+                word_times.append({
+                    "word": w.get("word", "").strip(),
+                    "start": round(w.get("start", 0), 2),
+                    "end": round(w.get("end", 0), 2),
+                })
+        for i in range(1, len(word_times)):
+            gap_ms = int((word_times[i]["start"] - word_times[i-1]["end"]) * 1000)
             if gap_ms >= 400:
                 points.append({
-                    "at_sec": round(all_words[i-1].get("end", 0) + gap_ms/2000, 2),
+                    "at_sec": round(word_times[i-1]["end"] + gap_ms/2000, 2),
                     "gap_ms": gap_ms,
                     "is_sentence_break": gap_ms >= 600,
-                    "word_before": all_words[i-1].get("word", ""),
-                    "word_after": all_words[i].get("word", ""),
+                    "word_before": word_times[i-1]["word"],
+                    "word_after": word_times[i]["word"],
                 })
     except Exception as e:
         logger.warning("气口检测失败: %s", e)
@@ -198,11 +201,18 @@ def _build_timeline(
             mat_cat = "talking"
             is_broll = False
 
-        # 气口对齐: 找到最近的停顿点
+        # 🆕 气口对齐: 段结束时间对齐到最近的自然停顿点
+        seg_end = cur_sec + dur
+        best_bp = None
         for bp in breath_points:
-            if abs(bp["at_sec"] - cur_sec) < 0.5 and bp.get("is_sentence_break"):
-                # 在停顿处切
-                break
+            if abs(bp["at_sec"] - seg_end) < 0.8 and bp.get("is_sentence_break"):
+                if best_bp is None or abs(bp["at_sec"] - seg_end) < abs(best_bp["at_sec"] - seg_end):
+                    best_bp = bp
+        if best_bp:
+            # 在自然停顿+2帧处切
+            from .director_ai import snap_to_frame
+            dur = snap_to_frame(best_bp["at_sec"] - cur_sec + 2/30, 30)
+            seg["duration_sec"] = dur  # 更新时长
 
         # 转场
         transition = "dissolve" if is_broll else "cut"
