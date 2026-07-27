@@ -113,6 +113,8 @@ def main():
     # 批量处理
     results = []
     t0 = time.time()
+    total = len(scripts)
+    done_count = [0]  # mutable counter for closure
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futures = {
@@ -122,9 +124,11 @@ def main():
         for f in as_completed(futures):
             r = f.result()
             results.append(r)
+            done_count[0] += 1
             icon = "✅" if r["success"] else "❌"
+            pct = f"[{done_count[0]}/{total}]"
             dur = f"{r.get('duration',0):.0f}s" if r["success"] else "失败"
-            print(f"  {icon} #{r['index']:03d} [{r['type']}] {r['script'][:40]:40s} {dur} {r.get('elapsed',0):.0f}s")
+            print(f"  {pct} {icon} #{r['index']:03d} [{r['type']}] {r['script'][:40]:40s} {dur} {r.get('elapsed',0):.0f}s")
 
     results.sort(key=lambda r: r["index"])
     total_elapsed = time.time() - t0
