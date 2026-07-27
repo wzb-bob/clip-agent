@@ -789,9 +789,43 @@ JSON格式:
         unified_job.enhancement_report.update(job.enhancement_report)
         unified_job.enhancement_report["pipeline"] = "unified_director"
 
-        # 直接导出(跳过旧的分阶段流程)
+        # 🆕 直接MP4渲染(不依赖旧export的video_status)
         if output_dir:
-            self.export(unified_job, output_dir)
+            try:
+                from .pro_renderer import RenderJob, render_professional
+                color_map = {"老板IP": "warm", "团购售卖": "vivid", "引流进店": "bright"}
+                default_color = color_map.get(job.script_type, "neutral")
+
+                video_segs = []
+                vs = job.video_slots or {}
+                for i, s in enumerate(unified_job.sentences):
+                    vf = vs.get(s.index if hasattr(s, 'index') else i+1) or vs.get(i+1)
+                    if not vf or not os.path.exists(vf):
+                        continue
+                    video_segs.append({
+                        "file": vf, "duration": s.duration_sec,
+                        "broll": s.is_broll,
+                        "text": s.text_overlay,
+                        "color_grade": default_color,
+                        "transition": "dissolve" if s.is_broll else "cut",
+                        "speed": getattr(s, "speed", "normal"),
+                        "speed_factor": 0.5 if getattr(s, "speed", "") == "slow_motion" else (2.0 if getattr(s, "speed", "") == "fast_forward" else 1.0),
+                    })
+
+                if video_segs:
+                    mp4_path = os.path.join(output_dir, "成片.mp4")
+                    rj = RenderJob(segments=video_segs, output_path=mp4_path, width=1080, height=1920)
+                    rj.__dict__["cinematic"] = (job.script_type == "老板IP")  # 老板IP默认电影感
+                    mp4_result = render_professional(rj)
+                    if mp4_result.success:
+                        unified_job.enhancement_report["mp4_rendered"] = True
+                        unified_job.enhancement_report["mp4_path"] = mp4_path
+                        unified_job.enhancement_report["mp4_size_mb"] = mp4_result.file_size_mb
+                        logger.info("MP4渲染: %.1fMB·%.1fs", mp4_result.file_size_mb, mp4_result.render_time_sec)
+                else:
+                    logger.warning("无有效视频素材·跳过MP4渲染")
+            except Exception as e:
+                logger.warning("MP4渲染失败: %s", e)
 
         elapsed = time.time() - t0
         unified_job.status = "done" if not unified_job.errors else "failed"

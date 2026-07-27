@@ -166,7 +166,17 @@ def analyze_script_semantic(
         # 提取JSON + 安全解析
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if not json_match:
-            logger.warning("LLM未返回有效JSON: %s...", content[:100])
+            # 尝试更宽松的匹配: 允许markdown代码块包裹
+            json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if not json_match:
+            # 尝试只取第一行JSON(DeepSeek有时在JSON后加文字)
+            first_line = content.strip().split('\n')[0] if '\n' in content else content
+            json_match = re.search(r'\{.*\}', first_line, re.DOTALL)
+        if not json_match:
+            logger.warning("LLM未返回有效JSON(len=%d): %s...", len(content), content[:200])
             return None
 
         data = _parse_json_safe(_repair_json(json_match.group(0)))
