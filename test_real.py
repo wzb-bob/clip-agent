@@ -38,6 +38,29 @@ def test_video(video_path: str, script_text: str, script_type: str = "团购售�
     print(f"   脚本: {script_text[:50]}...")
     print("=" * 60)
 
+    # Stage 0: 格式检查
+    try:
+        import json, subprocess
+        r = subprocess.run(["ffprobe","-v","quiet","-print_format","json","-show_streams", str(vp)],
+                         capture_output=True, text=True, timeout=10)
+        streams = json.loads(r.stdout).get("streams",[])
+        vcodec = [s.get("codec_name") for s in streams if s.get("codec_type")=="video"]
+        acodec = [s.get("codec_name") for s in streams if s.get("codec_type")=="audio"]
+        if any(c in ("hevc","h265") for c in vcodec):
+            print("   ⚠️ HEVC格式·自动转x264...")
+            x264 = str(vp.parent / f"_x264_{vp.name}.mp4")
+            if not os.path.exists(x264):
+                subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
+                    "-i",str(vp),"-c:v","libx264","-preset","fast","-crf","18","-c:a","aac",x264],timeout=300)
+            if os.path.exists(x264):
+                video_path = x264
+                vp = Path(x264)
+                print(f"   ✅ 已转换: {vp.name}")
+            else:
+                print("   ❌ 转换失败·继续用原文件")
+    except Exception:
+        pass
+
     # Stage 1: FFprobe 基本信息
     print("\n📹 Stage 1: 视频基本信息")
     try:
