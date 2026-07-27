@@ -795,6 +795,7 @@ JSON格式:
 
         elapsed = time.time() - t0
         unified_job.status = "done" if not unified_job.errors else "failed"
+        unified_job.enhancement_report["timing"] = {"total_s": round(elapsed, 1)}
         logger.info("🎬 统一导演完成: %s | %d段 | %.1fs | 弧线=%s",
                    unified_job.job_id, len(plan.segments), elapsed,
                    plan.emotional_arc[:50])
