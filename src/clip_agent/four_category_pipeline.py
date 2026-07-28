@@ -81,7 +81,19 @@ def run_four_category_pipeline(
 
     total_dur = sum(s.duration_sec for s in timeline_segs)
 
-    # Step 5: 生成剪映草稿
+    # Step 5: 生成SRT字幕(口播视频→Whisper→SRT)
+    srt_path = ""
+    if talking_video and os.path.exists(talking_video):
+        try:
+            from .whisper_srt_generator import generate_srt_from_video
+            srt_out = os.path.join(output_dir or tempfile.gettempdir(), "subtitles.srt")
+            srt_path = generate_srt_from_video(talking_video, srt_out) or ""
+            if srt_path:
+                logger.info("SRT字幕: %s", srt_path)
+        except Exception as e:
+            logger.debug("SRT生成跳过: %s", e)
+
+    # Step 6: 生成剪映草稿
     draft_path = ""
     if output_dir and talking_video:
         draft_path = _generate_jianying_draft(timeline_segs, talking_video, output_dir)
@@ -102,7 +114,7 @@ def run_four_category_pipeline(
 
     logger.info("四类管道完成: %d段·%.1fs·%.1fs", len(timeline_segs), total_dur, elapsed)
 
-    return JianYingTimeline(
+    result = JianYingTimeline(
         script_text=script_text,
         segments=timeline_segs,
         total_duration=total_dur,
@@ -110,6 +122,8 @@ def run_four_category_pipeline(
         breath_points=breath_points,
         draft_path=draft_path,
     )
+    result.srt_path = srt_path  # 动态属性
+    return result
 
 
 def _detect_breath_points(video_path: str) -> list[dict]:

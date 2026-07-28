@@ -305,10 +305,13 @@ def main():
             mat_name = Path(s.material_file).name[:15] if s.material_file else "?"
             print(f"║ {b} {s.start_sec:5.1f}s {mat_name:15s} {s.script_text[:25]}".ljust(43) + "║")
         print(f"╚══════════════════════════════════════╝")
+        srt = getattr(timeline, "srt_path", "")
+        if srt:
+            print(f"\n📝 SRT字幕: {srt}")
         if timeline.draft_path:
             zip_path = export_draft_zip(timeline.draft_path)
-            print(f"\n📥 {zip_path}")
-            print("💡 解压→拖入剪映→点「智能包装」→一键出片")
+            print(f"📥 草稿ZIP: {zip_path}")
+            print("💡 解压→拖入剪映·SRT导入→字幕即就位")
         return
 
     if args.showcase and args.script:
