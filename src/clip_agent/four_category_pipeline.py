@@ -385,21 +385,6 @@ def _generate_jianying_draft(
         gen.save()
         return str(draft_dir)
     except Exception as e:
-        logger.warning("pyJianYingDraft失败·降级手动JSON: %s", e)
-        return _generate_manual_draft(segments, talking_video, output_dir)
-
-
-def _generate_manual_draft(segments: list[TimelineSegment], talking_video: str, output_dir: str) -> str:
-    """手动生成简版 draft_content.json"""
-    draft = {
-        "platform": {"os": "windows"},
-        "draft_name": "AI剪辑草稿",
-        "draft_info": {"version": 1},
-        "materials": {"videos": [], "images": []},
-        "tracks": [],
-        "canvas_config": {"width": 1080, "height": 1920},
-    }
-    draft_path = os.path.join(output_dir, "draft_content.json")
-    with open(draft_path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
-    return draft_path
+        logger.warning("pyJianYingDraft失败·降级增强JSON: %s", e)
+        from .jianying_timeline_builder import _build_manual_draft
+        return _build_manual_draft(segments, talking_video, output_dir, "AI剪辑草稿")
