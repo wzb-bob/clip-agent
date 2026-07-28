@@ -87,7 +87,7 @@ def run_four_category_pipeline(
         try:
             from .whisper_srt_generator import generate_srt_from_video
             srt_out = os.path.join(output_dir or tempfile.gettempdir(), "subtitles.srt")
-            srt_path = generate_srt_from_video(talking_video, srt_out) or ""
+            srt_path = generate_srt_from_video(talking_video, srt_out, expected_script=script_text) or ""
             if srt_path:
                 logger.info("SRT字幕: %s", srt_path)
         except Exception as e:

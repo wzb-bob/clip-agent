@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 def generate_srt_from_video(video_path: str, output_path: str = "",
                             max_chars_per_line: int = 18,
-                            min_duration_ms: int = 800) -> str | None:
+                            min_duration_ms: int = 800,
+                            expected_script: str = "") -> str | None:
     """
     从视频文件生成SRT字幕。
 
@@ -55,6 +56,18 @@ def generate_srt_from_video(video_path: str, output_path: str = "",
         if not words:
             logger.warning("Whisper未提取到词级数据")
             return None
+
+        # 🆕 转录修正: DeepSeek对齐预期脚本
+        if expected_script:
+            try:
+                from .transcript_corrector import correct_transcript, align_transcript_to_timestamps
+                whisper_full = "".join(w["word"] for w in words)
+                corrected = correct_transcript(whisper_full, expected_script)
+                if corrected and len(corrected) > 10:
+                    words = align_transcript_to_timestamps(corrected, words)
+                    logger.info("转录修正: DeepSeek对齐完成")
+            except Exception:
+                pass
 
         # 智能分组: 每行最多max_chars_per_line字, 在标点处断行
         groups = _group_words_to_lines(words, max_chars_per_line, min_duration_ms)
