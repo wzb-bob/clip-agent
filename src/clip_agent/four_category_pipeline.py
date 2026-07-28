@@ -143,10 +143,19 @@ def run_four_category_pipeline(
 
 
 def _detect_breath_points(video_path: str) -> list[dict]:
-    """Whisper气口检测 → 返回切点列表"""
+    """Whisper气口检测 → 人声分离增强→词级时间戳→切点"""
     points = []
     try:
-        # 直接用execution_engine的Whisper逻辑
+        # 🆕 人声分离: 去BGM+降噪→提高Whisper准确度
+        try:
+            from .audio_separator import enhance_audio_for_whisper
+            enhanced = enhance_audio_for_whisper(video_path)
+            if enhanced:
+                video_path = enhanced  # 用增强后的音频
+                logger.debug("使用增强音频进行Whisper转录")
+        except Exception:
+            pass
+
         import whisper
         model = whisper.load_model("small")
         result = model.transcribe(video_path, word_timestamps=True)
