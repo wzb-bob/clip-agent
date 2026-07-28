@@ -48,10 +48,17 @@ def print_banner():
     deepseek_ok = bool(os.getenv("DEEPSEEK_API_KEY"))
     kimi_ok = bool(os.getenv("KIMI_API_KEY"))
 
+    ver = "v5.1"
+    try:
+        vf = Path(__file__).parent / "VERSION"
+        if vf.exists():
+            ver = vf.read_text().strip()
+    except: pass
+
     print(f"""
 ╔══════════════════════════════════════════════╗
-║       🎬 长益剪辑Agent · 演示模式            ║
-║   AI导演: 语义+视频+音频 → 一键成片          ║
+║       🎬 长益剪辑Agent {ver:8s}              ║
+║   四类素材·气口切割·剪映草稿·Codex Skill      ║
 ╠══════════════════════════════════════════════╣
 ║ FFmpeg: {'✅' if ffmpeg_ok else '❌'}  DeepSeek: {'✅' if deepseek_ok else '⚠️'}  Kimi: {'✅' if kimi_ok else '⚠️'}                 ║
 ╚══════════════════════════════════════════════╝""")
