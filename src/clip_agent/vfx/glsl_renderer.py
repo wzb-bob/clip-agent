@@ -33,7 +33,7 @@ _FFMPEG_MAP: dict[str, str] = {
     "hue_saturation": "hue=h={hue}:s={saturation}",
     "curves": "eq=contrast={contrast}:brightness={brightness}",
     "posterize": "pp=posterize:{levels}",
-    "threshold": "format=gray,geq=lum_expr='if(gt(lum(X,Y),{threshold}*255),255,0)'",
+    "threshold": "format=gray,geq=lum_expr='if(gt(lum(X,Y),{threshold}*255),255,0)':eval=frame",
     # 纹理叠加
     "film_grain": "noise=alls={intensity}:allf=t",
     "noise": "noise=alls={intensity}:allf=t",
@@ -45,7 +45,7 @@ _FFMPEG_MAP: dict[str, str] = {
     "kaleidoscope": "",
     # 复合
     "edge_detect": "edgedetect=low={threshold}:high={threshold}*2",
-    "emboss": "edgedetect+negate",
+    "emboss": "edgedetect,negate",
     # 转场
     "crossfade": "xfade=transition=fade:duration=0.5:offset={offset}",
     "dissolve": "xfade=transition=dissolve:duration=0.5:offset={offset}",
@@ -64,7 +64,7 @@ def _build_bloom_chain(input_label: str, output_label: str,
     return (
         f"[{input_label}]split[base][glow_src];"
         f"[glow_src]boxblur={radius}:2,"
-        f"geq=lum_expr='if(gt(lum(X,Y),{threshold}*255),lum(X,Y)*{intensity},0)'[glow];"
+        f"geq=lum_expr='if(gt(lum(X,Y),{threshold}*255),lum(X,Y)*{intensity},0)':eval=frame[glow];"
         f"[base][glow]blend=all_mode=screen:all_opacity={intensity}[{output_label}]"
     )
 
@@ -75,7 +75,7 @@ def _build_glow_chain(input_label: str, output_label: str,
     return (
         f"[{input_label}]split[base_g][glow_g];"
         f"[glow_g]boxblur={radius}:2,"
-        f"geq=r='r(X,Y)*{intensity}':g='g(X,Y)*{intensity}':b='b(X,Y)*{intensity}'[glow_out];"
+        f"geq=r='r(X,Y)*{intensity}':g='g(X,Y)*{intensity}':b='b(X,Y)*{intensity}':eval=frame[glow_out];"
         f"[base_g][glow_out]blend=all_mode=addition[{output_label}]"
     )
 
@@ -84,8 +84,8 @@ def _build_ca_chain(input_label: str, output_label: str, intensity: float = 3.0)
     """构建色散滤镜链 (RGB通道分离+偏移)"""
     return (
         f"[{input_label}]split[ca_r][ca_g][ca_b];"
-        f"[ca_r]geq=r='r(X-{intensity},Y)':g='g(X,Y)':b='b(X,Y)'[r_shift];"
-        f"[ca_b]geq=r='r(X,Y)':g='g(X,Y)':b='b(X+{intensity},Y)'[b_shift];"
+        f"[ca_r]geq=r='r(X-{intensity},Y)':g='g(X,Y)':b='b(X,Y)':eval=frame[r_shift];"
+        f"[ca_b]geq=r='r(X,Y)':g='g(X,Y)':b='b(X+{intensity},Y)':eval=frame[b_shift];"
         f"[r_shift][ca_g]blend=all_mode=addition:all_opacity=0.5[mid];"
         f"[mid][b_shift]blend=all_mode=addition:all_opacity=0.5[{output_label}]"
     )

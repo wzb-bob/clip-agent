@@ -171,7 +171,7 @@ def render_professional(job: RenderJob) -> RenderResult:
             if kb == "zoom_in":
                 vf_blur_bg += f",zoompan=z='min(zoom+0.001,1.3)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
             elif kb == "zoom_out":
-                f_blur_bg += f",zoompan=z='max(zoom-0.001,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
+                vf_blur_bg += f",zoompan=z='max(zoom-0.001,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={job.width}x{job.height}"
 
         # 检查是否有音频轨 → 加loudnorm归一化
         has_audio = _probe_has_audio(fp)
@@ -532,7 +532,7 @@ def _burn_text_with_animation(working: str, prepared: list, font_path: str, tota
     if not text_segs:
         return working
 
-    font_name = Path(font_path).name if ":" in font_path else font_path
+    font_name = font_path.replace('\\', '/').replace(':', '\\:')  # 传完整绝对路径,Windows兼容
     acc = 0.0
     text_filters = []
 

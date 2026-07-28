@@ -241,7 +241,7 @@ class BeatTriggerEngine:
             filters.append(
                 f"[{input_label}]geq=r='r(X,Y)+{opacity*255}*(1-r(X,Y)/255)':"
                 f"g='g(X,Y)+{opacity*255}*(1-g(X,Y)/255)':"
-                f"b='b(X,Y)+{opacity*255}*(1-b(X,Y)/255)'[flash_out]"
+                f"b='b(X,Y)+{opacity*255}*(1-b(X,Y)/255)':eval=frame[flash_out]"
             )
             input_label = "flash_out"
 

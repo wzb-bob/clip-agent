@@ -1,417 +1,492 @@
 """
-ChatCut VFX 增强层 · 将vfx引擎注入ChatCut剪辑管线
+ChatCut VFX 增强层 · 长益三类脚本专属剪辑风格
 
-从机械拼接升级为创意剪辑:
-  节拍检测 → 效果分配 → 段级滤镜链 → 转场升级 → 最终渲染
+不再套通用预设。每类脚本有确定的剪辑策略:
+  团购售卖 → 价格冲击·紧迫感·食物光泽
+  老板IP   → 故事感·信任·真实颗粒
+  引流进店 → 氛围诱惑·排队稀缺·地点引导
 
-用法:
-  from clip_agent.chatcut_vfx import enhance_timeline, VfxPreset
-  enhanced = enhance_timeline(timeline, video_path, VfxPreset.douyin_hot)
+10行业自动适配色调(通过 detect_industry)，
+但剪辑策略由脚本类别决定——这是跨行业的铁律。
 """
 from __future__ import annotations
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════
-# 创意预设
+# 三类脚本 = 三套剪辑策略 (跨10行业通用)
 # ══════════════════════════════════════════════════════════
 
-class VfxPreset(Enum):
-    douyin_hot = "douyin_hot"         # 抖音爆款: 频闪+RGB+缩放脉冲
-    cinematic = "cinematic"           # 电影感: 漂白银+胶片颗粒+暗角
-    gritty_drill = "gritty_drill"     # Drill重击: 震动+故障+色散
-    warm_story = "warm_story"         # 温暖叙事: 柔光+棕褐+慢节奏
-    clean_business = "clean_business" # 干净商务: 微对比+去噪+无特效
-    retro_vhs = "retro_vhs"           # 复古VHS: 噪点+扫描线+坏电视
-
-
-# 预设 → (全局调色, 纹理叠加, 节拍预设)
-PRESET_CONFIG: dict[VfxPreset, tuple[str, str, str]] = {
-    VfxPreset.douyin_hot:      ("none",            "none",          "douyin_hot"),
-    VfxPreset.cinematic:       ("bleach_bypass",   "film_grain",    "melodic_subtle"),
-    VfxPreset.gritty_drill:    ("bleach_bypass",   "vhs_noise",     "drill_impact"),
-    VfxPreset.warm_story:      ("sepia",           "film_grain",    "minimal_clean"),
-    VfxPreset.clean_business:  ("color_balance",   "none",          "minimal_clean"),
-    VfxPreset.retro_vhs:       ("posterize",       "vhs_noise",     "melodic_subtle"),
-}
-
-
-# 段角色 → 默认效果 (hook/body/broll/cta/outro)
-SEGMENT_EFFECTS: dict[str, dict] = {
-    "hook": {
-        "color": "none",
-        "texture": "none",
-        "beat_triggers": ["strobe_hit", "rgb_hit"],
-        "transition_in": "dissolve",
-        "text_effect": "fly_in",
+CATEGORY_STYLE = {
+    "团购售卖": {
+        "label": "价格冲击型",
+        "global_color": "warm_boost",     # 暖色增强·食物更有食欲
+        "global_texture": "none",         # 干净利落·不分散注意力
+        "beat_preset": "douyin_hot",      # 强节奏·频闪+RGB
+        "hook_effects": ["price_pop", "flash"],     # 钩子=价格弹出+闪光
+        "body_effects": ["warm_grade"],             # 主体=暖色调
+        "broll_effects": ["bloom_light", "slow_zoom"], # B-roll=柔光+慢缩
+        "cta_effects": ["zoom_pulse", "red_flash"],  # CTA=缩放脉冲+红闪
+        "transition": "push",             # 推入转场=紧凑感
+        "text_style": "bold_price",       # 粗体价格文字
     },
-    "body": {
-        "color": "none",       # 由全局预设覆盖
-        "texture": "none",     # 由全局预设覆盖
-        "beat_triggers": ["light_pulse", "warm_pulse"],
-        "transition_in": "crossfade",
-        "text_effect": "fade_up",
+    "老板IP": {
+        "label": "故事信任型",
+        "global_color": "film_warm",      # 胶片暖色·怀旧真实
+        "global_texture": "film_grain",   # 胶片颗粒·增加质感
+        "beat_preset": "melodic_subtle",  # 弱节奏·不抢戏
+        "hook_effects": ["vignette_soft"],          # 钩子=柔暗角·聚焦人脸
+        "body_effects": ["film_grain_light"],       # 主体=轻颗粒
+        "broll_effects": ["crossfade_slow"],        # B-roll=慢交叉淡入
+        "cta_effects": ["glow_warm"],               # CTA=暖光引导
+        "transition": "crossfade",        # 交叉淡入=娓娓道来
+        "text_style": "clean_subtitle",   # 干净字幕
     },
-    "broll": {
-        "color": "bleach_bypass",
-        "texture": "film_grain",
-        "beat_triggers": ["speed_curve"],
-        "transition_in": "dissolve",
-        "text_effect": "none",
-    },
-    "cta": {
-        "color": "none",
-        "texture": "none",
-        "beat_triggers": ["heavy_drop", "color_hit"],
-        "transition_in": "zoom_transition",
-        "text_effect": "price_pop",
-    },
-    "outro": {
-        "color": "vignette",
-        "texture": "none",
-        "beat_triggers": [],
-        "transition_in": "crossfade",
-        "text_effect": "fade_out",
+    "引流进店": {
+        "label": "氛围诱惑型",
+        "global_color": "bright_clean",   # 明亮干净·展示环境
+        "global_texture": "none",         # 无颗粒·保持清晰
+        "beat_preset": "party_hype",      # 派对能量·强节奏
+        "hook_effects": ["glitch_intro", "speed_ramp"],   # 钩子=故障开场+变速
+        "body_effects": ["bright_grade", "stabilize"],    # 主体=明亮+稳定
+        "broll_effects": ["kaleidoscope_light", "glow"],  # B-roll=万花筒+发光
+        "cta_effects": ["location_pin", "pulse_ring"],    # CTA=定位针+脉冲圈
+        "transition": "zoom_transition",  # 缩放转场=空间感
+        "text_style": "location_tag",     # 地点标签
     },
 }
 
+
+# ══════════════════════════════════════════════════════════
+# 行业色调微调 (可选·叠加在脚本类别之上)
+# ══════════════════════════════════════════════════════════
+
+INDUSTRY_COLOR_TWEAK = {
+    "餐饮": {"warmth": 0.08, "saturation": 0.10, "contrast": 0.05},   # 食物要暖·饱和
+    "美容": {"warmth": -0.02, "saturation": -0.05, "contrast": 0.02},  # 干净·低饱和
+    "汽修": {"warmth": 0.00, "saturation": -0.10, "contrast": 0.15},   # 金属感·高对比
+    "建材": {"warmth": 0.03, "saturation": 0.00, "contrast": 0.10},    # 质感·对比
+    "零售": {"warmth": 0.02, "saturation": 0.05, "contrast": 0.05},    # 活泼
+    "教育": {"warmth": 0.00, "saturation": 0.00, "contrast": 0.08},    # 干净·清晰
+    "健身": {"warmth": -0.05, "saturation": -0.10, "contrast": 0.20},  # 冷峻·高对比
+    "宠物": {"warmth": 0.10, "saturation": 0.05, "contrast": 0.00},    # 温暖·柔和
+    "家政": {"warmth": 0.05, "saturation": 0.00, "contrast": 0.00},    # 温和
+    "摄影": {"warmth": 0.00, "saturation": -0.05, "contrast": 0.12},   # 专业·中性
+}
+
+
+# ══════════════════════════════════════════════════════════
+# 效果 → FFmpeg滤镜 实际映射 (不是描述, 是可执行的命令)
+# ══════════════════════════════════════════════════════════
+
+def _effect_to_ffmpeg(effect_name: str, in_label: str = "0", out_label: str = "v") -> str:
+    """
+    将效果名转为可执行的 FFmpeg 滤镜片段。
+
+    这是整个模块最关键的映射表——每个效果都有确定的 FFmpeg 实现。
+    """
+    ffmpeg_map = {
+        # ── 价格冲击类 ──
+        "price_pop": (
+            f"[{in_label}]drawtext=fontfile=/Windows/Fonts/simhei.ttf:"
+            "text='':fontsize=72:fontcolor=red@0.9:"
+            "x=(w-text_w)/2:y=h*0.25-th:enable='between(t,0,2)'[{out_label}]"
+        ),
+        "flash": (
+            f"[{in_label}]geq=r='r(X,Y)+40*(1-gt(t,0.08))':"
+            f"g='g(X,Y)+40*(1-gt(t,0.08))':"
+            f"b='b(X,Y)+40*(1-gt(t,0.08))':eval=frame[{out_label}]"
+        ),
+        "red_flash": (
+            f"[{in_label}]geq=r='r(X,Y)+50*(1-gt(t,0.1))':"
+            f"g='g(X,Y)':b='b(X,Y)':eval=frame[{out_label}]"
+        ),
+
+        # ── 调色类 ──
+        # 以下使用eq滤镜替代不存在的colorbalance滤镜(BugFix#1)
+        "warm_boost": (
+            f"[{in_label}]eq=saturation=1.2:brightness=0.05:contrast=1.05:gamma=1.03[{out_label}]"
+        ),
+        "warm_grade": (
+            f"[{in_label}]eq=saturation=1.15:brightness=0.03:contrast=1.03[{out_label}]"
+        ),
+        "film_warm": (
+            f"[{in_label}]eq=saturation=0.85:brightness=0.02:contrast=1.1:gamma=1.08[{out_label}]"
+        ),
+        "bright_clean": (
+            f"[{in_label}]eq=saturation=1.0:brightness=0.08:contrast=1.08:gamma=0.95[{out_label}]"
+        ),
+        "bright_grade": (
+            f"[{in_label}]eq=saturation=1.0:brightness=0.05:contrast=1.05[{out_label}]"
+        ),
+
+        # ── 纹理类 ──
+        "film_grain_light": (
+            f"[{in_label}]noise=alls=8:allf=t,"
+            f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)'[{out_label}]"
+        ),
+
+        # ── 柔光/发光 ──
+        "bloom_light": (
+            f"[{in_label}]split[bg][fg];"
+            f"[bg]boxblur=5:2,eq=brightness=0.1[bg_blur];"
+            f"[bg_blur][fg]blend=all_mode=screen:all_opacity=0.3[{out_label}]"
+        ),
+        "glow_warm": (
+            f"[{in_label}]split[base][glow];"
+            f"[glow]boxblur=10:2,geq=r='r(X,Y)*1.3':g='g(X,Y)*1.1':b='b(X,Y)*0.9'[glow_out];"
+            f"[base][glow_out]blend=all_mode=screen:all_opacity=0.25[{out_label}]"
+        ),
+
+        # ── 暗角 ──
+        "vignette_soft": (
+            f"[{in_label}]vignette=PI/4:aspect=0.75[{out_label}]"
+        ),
+
+        # ── 变速类 ──
+        "slow_zoom": (
+            f"[{in_label}]zoompan=z='min(zoom+0.0008,1.03)':d=1:x='iw/2-(iw/zoom/2)':"
+            f"y='ih/2-(ih/zoom/2)':s=1080x1920[{out_label}]"
+        ),
+        "speed_ramp": (
+            f"[{in_label}]setpts=0.8*PTS[{out_label}]"
+        ),
+
+        # ── 脉冲类 ──
+        "zoom_pulse": (
+            f"[{in_label}]zoompan=z='1+0.02*sin(2*PI*on*0.02)':d=1:s=1080x1920[{out_label}]"
+        ),
+        "pulse_ring": (
+            f"[{in_label}]drawbox=x=iw*0.1:y=ih*0.7:w=iw*0.8:h=4:"
+            f"color=red@0.6:t=fill,"
+            f"drawbox=x=iw*0.1:y=ih*0.7:w=iw*0.8:h=4:"
+            f"color=white@0.8:t=fill[{out_label}]"
+        ),
+
+        # ── 故障类 ──
+        "glitch_intro": (
+            f"[{in_label}]geq=r='r(X+2*sin(PI*t*10),Y)':"
+            f"g='g(X,Y)':b='b(X-2*sin(PI*t*10),Y)'[{out_label}]"
+        ),
+
+        # ── 万花筒(轻) ──
+        "kaleidoscope_light": (
+            f"[{in_label}]hflip,blend=all_mode=average[{out_label}]"
+        ),
+
+        # ── 十字淡入 ──
+        "crossfade_slow": (
+            f"[{in_label}]fade=in:st=0:d=0.5[{out_label}]"
+        ),
+
+        # ── 定位标记 ──
+        "location_pin": (
+            f"[{in_label}]drawtext=fontfile=/Windows/Fonts/simhei.ttf:"
+            f"text='📍':fontsize=48:fontcolor=white@0.9:"
+            f"x=iw*0.05:y=ih*0.85[{out_label}]"
+        ),
+
+        # ── 稳定(轻微去抖) ──
+        "stabilize": (
+            f"[{in_label}]deshake[{out_label}]"
+        ),
+    }
+
+    return ffmpeg_map.get(effect_name, f"[{in_label}]copy[{out_label}]")
+
+
+# ══════════════════════════════════════════════════════════
+# 主函数: 为时间线生成可执行的FFmpeg滤镜链
+# ══════════════════════════════════════════════════════════
 
 @dataclass
-class VfxEnhanceResult:
-    """VFX增强结果"""
+class VfxPlan:
+    """VFX执行计划——不是描述, 是可执行的FFmpeg命令片段"""
     success: bool
-    segments: list[dict] = field(default_factory=list)
+    category: str = "团购售卖"
+    category_label: str = ""
     beat_count: int = 0
     bpm: float = 120.0
-    preset: str = ""
-    filter_chain: str = ""
+
+    # 全局滤镜(应用于整个合成后视频)
+    global_vf: str = ""
+
+    # 段级滤镜: [{label_in, label_out, vf, duration}]
+    segments_vfx: list[dict] = field(default_factory=list)
+
+    # 转场滤镜: [{from_label, to_label, vf, duration}]
+    transitions: list[dict] = field(default_factory=list)
+
     error: str = ""
 
 
-# ══════════════════════════════════════════════════════════
-# 核心: 将vfx引擎注入时间线
-# ══════════════════════════════════════════════════════════
-
-def enhance_timeline(
-    timeline,  # FourCategoryTimeline
+def build_vfx_plan(
+    timeline,           # FourCategoryTimeline
     video_path: str,
-    preset: VfxPreset = VfxPreset.douyin_hot,
-    script_category: str = "团购售卖",
-) -> VfxEnhanceResult:
+    category: str = "团购售卖",   # 脚本类别——决定剪辑策略
+    industry: str = "",          # 行业(可选)——微调色调
+) -> VfxPlan:
     """
-    对ChatCut时间线进行VFX增强。
+    为ChatCut时间线生成VFX执行计划。
 
-    Args:
-        timeline: four_category_pipeline 返回的时间线对象
-        video_path: 原始视频路径
-        preset: 创意预设
-        script_category: 脚本类别(影响段效果分配)
+    category: "团购售卖" | "老板IP" | "引流进店"
+    industry: 10行业之一(可选, 用于微调色调)
 
-    Returns:
-        VfxEnhanceResult 含增强后的segments和滤镜链
+    返回的 VfxPlan 包含可直接拼接的 FFmpeg 滤镜片段。
     """
+    # 获取类别策略
+    style = CATEGORY_STYLE.get(category, CATEGORY_STYLE["团购售卖"])
+
+    # 行业色调微调
+    tweak = INDUSTRY_COLOR_TWEAK.get(industry, {})
+
+    # ── 节拍检测 ──
     try:
-        from .vfx.beat_trigger import (
-            BeatTriggerEngine, BeatTrigger, BeatTriggerPresets,
-            BeatOnset, detect_beats_simple,
-        )
-        from .vfx.shader_catalog import ShaderCatalog, SHADER_CATEGORIES
-        from .vfx.glsl_renderer import GlslRenderer, _build_bloom_chain, _build_ca_chain
-    except ImportError as e:
-        return VfxEnhanceResult(success=False, error=f"vfx模块导入失败: {e}")
+        from .vfx.beat_trigger import detect_beats_simple, BeatOnset, BeatTriggerEngine, BeatTriggerPresets
+        beats = detect_beats_simple(video_path)
+    except Exception:
+        beats = []
 
-    # ── 1. 节拍检测 ──
-    beats = detect_beats_simple(video_path)
     if not beats:
-        # 无声视频: 使用5秒间隔假节拍
         duration = sum(getattr(s, 'duration_sec', 2) for s in (timeline.segments if hasattr(timeline, 'segments') else []))
         duration = max(duration, 10)
         beats = [BeatOnset(t, 0.8, t % 2 == 0) for t in [i * 0.5 for i in range(int(duration * 2))]]
-        logger.info("无音频节拍: 使用假拍网格(%d拍)", len(beats))
 
     # 配置节拍引擎
-    global_color, global_texture, beat_preset_name = PRESET_CONFIG[preset]
-    beat_triggers = BeatTriggerPresets.for_genre(
-        "trap" if preset == VfxPreset.gritty_drill else
-        "melodic" if preset in (VfxPreset.warm_story, VfxPreset.retro_vhs) else
-        "hype" if preset == VfxPreset.douyin_hot else
-        "boom_bap"
-    )
     engine = BeatTriggerEngine()
-    engine.configure(beat_triggers)
+    engine.configure(BeatTriggerPresets.for_genre(
+        "hype" if style["beat_preset"] == "douyin_hot" else
+        "melodic" if style["beat_preset"] == "melodic_subtle" else
+        "hype"
+    ))
     engine.set_beat_map(beats)
 
-    # ── 2. 逐段增强 ──
-    enhanced_segments = []
+    # ── 逐段构建滤镜 ──
     segments = timeline.segments if hasattr(timeline, 'segments') else []
-
-    accum_time = 0.0  # 累计时间(跟踪节拍位置)
+    seg_vfx_list = []
+    accum_time = 0.0
 
     for i, seg in enumerate(segments):
-        # 确定段角色
-        role = _guess_role(i, len(segments), seg)
-        effects = SEGMENT_EFFECTS.get(role, SEGMENT_EFFECTS["body"])
-
-        # 段时长
         dur = getattr(seg, 'duration_sec', 2.0)
-        seg_start = accum_time
         seg_end = accum_time + dur
-
-        # 更新节拍引擎到段结束时间
         engine.update(seg_end)
-        beat_params = engine.current_effect_params
 
-        # 确定段的着色器链
-        seg_color = effects["color"] if effects["color"] != "none" else global_color
-        seg_texture = effects["texture"] if effects["texture"] != "none" else global_texture
+        role = _guess_role(i, len(segments), seg)
 
-        # 构建段级滤镜
-        seg_filters = _build_segment_filters(
-            seg_color, seg_texture, beat_params, role,
-            effects.get("transition_in", "crossfade"),
-            effects.get("text_effect", "none"),
-        )
+        # 选择该角色的效果列表
+        effect_names = style.get(f"{role}_effects", style.get("body_effects", []))
 
-        enhanced = {
+        # 为每个效果生成FFmpeg滤镜
+        cur_label = str(i)  # 使用段索引作为输入标签
+        seg_filters = []
+        for fx_name in effect_names:
+            vf = _effect_to_ffmpeg(fx_name, cur_label, f"s{i}_{fx_name}")
+            if f"copy[{fx_name}]" not in vf:  # 跳过无实际效果的
+                seg_filters.append(vf)
+
+        seg_vfx_list.append({
             "index": i,
             "role": role,
-            "file": getattr(seg, 'material_file', ''),
             "duration": dur,
             "start_sec": getattr(seg, 'start_sec', 0),
-            "text": getattr(seg, 'script_text', '')[:50] if hasattr(seg, 'script_text') else "",
-            "is_broll": getattr(seg, 'is_broll', False),
-            # VFX增强字段
             "filters": seg_filters,
-            "color_grade": seg_color,
-            "texture": seg_texture,
-            "transition_in": effects.get("transition_in", "crossfade"),
-            "text_effect": effects.get("text_effect", "none"),
-            "beat_params": {k: round(v, 3) for k, v in beat_params.items()},
-        }
-        enhanced_segments.append(enhanced)
+            "transition": style.get("transition", "crossfade"),
+        })
         accum_time = seg_end
 
-    # ── 3. 构建全局滤镜链 ──
-    global_filters = _build_global_filters(global_color, global_texture, beats)
+    # ── 全局滤镜(最终调色) ──
+    global_vf = _build_global_color_filter(style["global_color"], tweak)
 
-    return VfxEnhanceResult(
+    return VfxPlan(
         success=True,
-        segments=enhanced_segments,
+        category=category,
+        category_label=style["label"],
         beat_count=len(beats),
         bpm=_estimate_bpm(beats),
-        preset=preset.value,
-        filter_chain=global_filters,
+        global_vf=global_vf,
+        segments_vfx=seg_vfx_list,
     )
 
 
 # ══════════════════════════════════════════════════════════
-# 内部辅助
+# 渲染集成: 生成最终FFmpeg命令
+# ══════════════════════════════════════════════════════════
+
+def render_with_vfx(
+    vfx_plan: VfxPlan,
+    segment_files: list[tuple[str, float]],    # [(文件路径, 段时长), ...]
+    audio_path: str = "",
+    output_path: str = "",
+    width: int = 1080,
+    height: int = 1920,
+) -> tuple[bool, str]:
+    """
+    执行VFX渲染——生成并运行FFmpeg命令。
+
+    segment_files: [(视频文件路径, 该段时长秒), ...]
+    返回: (成功, 输出路径或错误信息)
+    """
+    import subprocess, os
+
+    if not segment_files:
+        return False, "无素材文件"
+
+    if not output_path:
+        output_path = str(Path(segment_files[0][0]).parent / "vfx_output.mp4")
+
+    # 构建filter_complex
+    filter_parts = []
+    concat_labels = []
+
+    for i, ((file_path, duration), seg_vfx) in enumerate(
+        zip(segment_files, vfx_plan.segments_vfx)
+    ):
+        label_in = str(i)
+        label_out = f"seg{i}"
+
+        # 段级滤镜链
+        current_label = label_in
+        for j, vf in enumerate(seg_vfx.get("filters", [])):
+            # 把 vf 中的标签替换为当前链
+            adjusted = vf.replace(f"[{label_in}]", f"[{current_label}]")
+            # 替换输出标签为临时标签
+            tmp_label = f"tmp{i}_{j}"
+            adjusted = adjusted.replace(f"[s{i}_", f"[tmp{i}_")
+            filter_parts.append(adjusted)
+            current_label = f"tmp{i}_" + adjusted.split("[")[-1].split("]")[0]
+
+        # 段裁剪+时长
+        filter_parts.append(
+            f"[{current_label}]trim=duration={duration},setpts=PTS-STARTPTS,"
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}[{label_out}]"
+        )
+        concat_labels.append(label_out)
+
+    # 拼接
+    concat_inputs = "".join(f"[{l}]" for l in concat_labels)
+    n = len(segment_files)
+    filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[v_raw]")
+
+    # 全局调色
+    if vfx_plan.global_vf:
+        filter_parts.append(
+            vfx_plan.global_vf.replace("[0]", "[v_raw]").replace("[v]", "[v_final]")
+        )
+        video_out = "v_final"
+    else:
+        filter_parts.append(f"[v_raw]copy[v_final]")
+        video_out = "v_final"
+
+    filter_complex = ";".join(filter_parts)
+
+    # FFmpeg命令
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    for file_path, _ in segment_files:
+        cmd.extend(["-i", file_path])
+    if audio_path and os.path.exists(audio_path):
+        cmd.extend(["-i", audio_path])
+
+    cmd.extend([
+        "-filter_complex", filter_complex,
+        "-map", f"[{video_out}]",
+    ])
+    if audio_path and os.path.exists(audio_path):
+        cmd.extend(["-map", f"{len(segment_files)}:a:0"])
+    cmd.extend([
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-b:a", "192k",
+        "-pix_fmt", "yuv420p",
+        output_path,
+    ])
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode == 0 and os.path.exists(output_path):
+            size_mb = os.path.getsize(output_path) / 1024 / 1024
+            logger.info(f"VFX渲染完成: {size_mb:.1f}MB → {output_path}")
+            return True, output_path
+        else:
+            return False, f"FFmpeg错误: {proc.stderr[:300]}"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+# ══════════════════════════════════════════════════════════
+# 辅助
 # ══════════════════════════════════════════════════════════
 
 def _guess_role(idx: int, total: int, seg) -> str:
-    """根据段位置和属性推测角色"""
     if idx == 0:
         return "hook"
     if idx == total - 1:
         return "cta"
     if getattr(seg, 'is_broll', False):
         return "broll"
-    if idx >= total * 0.7:
-        return "outro"
     return "body"
 
 
-def _build_segment_filters(
-    color: str,
-    texture: str,
-    beat_params: dict,
-    role: str,
-    transition: str,
-    text_effect: str,
-) -> dict:
-    """为单个段构建FFmpeg滤镜参数"""
-    filters = []
+def _build_global_color_filter(color_name: str, tweak: dict) -> str:
+    """根据颜色名+行业微调构建全局调色滤镜"""
+    warmth = tweak.get("warmth", 0)
+    saturation = tweak.get("saturation", 0)
+    contrast = tweak.get("contrast", 0)
 
-    # 调色
-    if color and color != "none":
-        from .vfx.shader_catalog import get_shader
-        shader = get_shader(color)
-        if shader:
-            filters.append({"type": "color", "shader": color, "params": dict(shader.params)})
-
-    # 纹理
-    if texture and texture != "none":
-        from .vfx.shader_catalog import get_shader
-        shader = get_shader(texture)
-        if shader:
-            filters.append({"type": "texture", "shader": texture, "params": dict(shader.params)})
-
-    # 节拍效果 (仅非零时添加)
-    if beat_params.get("flash_opacity", 0) > 0.01:
-        filters.append({"type": "beat", "effect": "flash", "intensity": round(beat_params["flash_opacity"], 2)})
-    if beat_params.get("shake_amount", 0) > 0.5:
-        filters.append({"type": "beat", "effect": "shake", "intensity": round(beat_params["shake_amount"], 1)})
-    if beat_params.get("rgb_split_amount", 0) > 0.5:
-        filters.append({"type": "beat", "effect": "rgb_split", "intensity": round(beat_params["rgb_split_amount"], 1)})
-    if beat_params.get("bloom_boost", 0) > 0.01:
-        filters.append({"type": "beat", "effect": "bloom", "intensity": round(beat_params["bloom_boost"], 2)})
-    if beat_params.get("glitch_intensity", 0) > 0.01:
-        filters.append({"type": "beat", "effect": "glitch", "intensity": round(beat_params["glitch_intensity"], 2)})
-
-    # 转场
-    if transition and transition != "crossfade":
-        filters.append({"type": "transition", "effect": transition})
-
-    # 文字效果
-    if text_effect and text_effect != "none":
-        filters.append({"type": "text", "effect": text_effect})
-
-    return {
-        "chain": filters,
-        "role": role,
-        "transition": transition,
+    base_filters = {
+        "warm_boost": f"eq=saturation={1.2+saturation}:brightness=0.05:contrast={1.05+contrast}:gamma={1.03+warmth}",
+        "film_warm": f"eq=saturation={0.85+saturation}:brightness=0.02:contrast={1.1+contrast}:gamma={1.08+warmth}",
+        "bright_clean": f"eq=saturation={1.0+saturation}:brightness=0.08:contrast={1.08+contrast}:gamma=0.95",
+        "none": "copy",
     }
-
-
-def _build_global_filters(global_color: str, global_texture: str, beats: list) -> str:
-    """构建全局FFmpeg滤镜链(应用于整个合成后的视频)"""
-    parts = []
-
-    # 全局调色
-    if global_color and global_color != "none":
-        from .vfx.glsl_renderer import GlslRenderer
-        r = GlslRenderer()
-        filter_str = r._build_filter(
-            type('s', (), {'name': global_color, 'params': {}})(),
-            {},
-        )
-        if filter_str:
-            parts.append(filter_str)
-
-    # 全局纹理(如果无段级纹理)
-    if global_texture and global_texture != "none":
-        from .vfx.glsl_renderer import GlslRenderer
-        r = GlslRenderer()
-        filter_str = r._build_filter(
-            type('s', (), {'name': global_texture, 'params': {}})(),
-            {},
-        )
-        if filter_str:
-            parts.append(filter_str)
-
-    return ";".join(parts) if parts else ""
+    vf = base_filters.get(color_name, "copy")
+    if vf == "copy":
+        return ""
+    return f"[0]{vf}[v]"
 
 
 def _estimate_bpm(beats: list) -> float:
-    """从节拍列表估算BPM"""
     if len(beats) < 2:
         return 120.0
     intervals = []
-    for i in range(1, len(beats)):
-        dt = beats[i].time_seconds - beats[i-1].time_seconds
-        if 0.2 <= dt <= 2.0:  # 合理范围
+    for i in range(1, min(len(beats), 30)):
+        dt = beats[i].time_seconds - beats[i - 1].time_seconds
+        if 0.2 <= dt <= 2.0:
             intervals.append(dt)
-    if not intervals:
-        return 120.0
-    avg_interval = sum(intervals) / len(intervals)
-    return round(60.0 / avg_interval, 1)
+    return round(60.0 / (sum(intervals) / len(intervals)), 1) if intervals else 120.0
 
 
 # ══════════════════════════════════════════════════════════
-# 便捷函数: 直接生成增强版FFmpeg命令
+# 兼容旧接口
 # ══════════════════════════════════════════════════════════
 
-def build_vfx_ffmpeg_command(
-    enhanced_result: VfxEnhanceResult,
-    input_files: list[str],
-    output_path: str,
-    width: int = 1080,
-    height: int = 1920,
-) -> list[str]:
-    """
-    从VfxEnhanceResult构建完整FFmpeg渲染命令。
-
-    返回可直接subprocess.run的ffmpeg命令列表。
-    """
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
-
-    # 输入文件
-    for f in input_files:
-        if Path(f).exists():
-            cmd.extend(["-i", f])
-
-    # 构建filter_complex
-    filter_parts = []
-    seg_count = len(enhanced_result.segments)
-
-    for i, seg in enumerate(enhanced_result.segments):
-        input_idx = i if i < len(input_files) else 0
-        label_in = str(input_idx)
-        label_out = f"s{i}"
-
-        # 段级滤镜
-        seg_filter = ""
-        for f in seg.get("filters", {}).get("chain", []):
-            if f["type"] == "color" and f.get("shader"):
-                seg_filter += _shader_to_ffmpeg_filter(f["shader"], label_in, "tmp") + ";"
-                label_in = "tmp"
-            elif f["type"] == "beat" and f["effect"] == "flash":
-                opacity = f["intensity"]
-                seg_filter += f"[{label_in}]geq=r='r(X,Y)+{opacity*255}*(1-r(X,Y)/255)':g='g(X,Y)+{opacity*255}*(1-g(X,Y)/255)':b='b(X,Y)+{opacity*255}*(1-b(X,Y)/255)'[tmp];"
-                label_in = "tmp"
-
-        if seg_filter:
-            filter_parts.append(seg_filter[:-1])  # 去掉末尾分号
-        filter_parts.append(f"[{label_in}]trim=duration={seg['duration']},setpts=PTS-STARTPTS[{label_out}]")
-
-    # 拼接所有段
-    concat_inputs = "".join(f"[s{i}]" for i in range(seg_count))
-    filter_parts.append(f"{concat_inputs}concat=n={seg_count}:v=1:a=1[v][a]")
-
-    # 全局滤镜
-    if enhanced_result.filter_chain:
-        filter_parts.append(f"[v]{enhanced_result.filter_chain}[v]")
-
-    cmd.extend(["-filter_complex", ";".join(filter_parts)])
-    cmd.extend(["-map", "[v]", "-map", "[a]"])
-    cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "18"])
-    cmd.extend(["-c:a", "aac", "-b:a", "192k"])
-    cmd.extend(["-pix_fmt", "yuv420p"])
-    cmd.append(output_path)
-
-    return cmd
+def enhance_timeline(timeline, video_path: str, preset=None, script_category: str = "团购售卖"):
+    """兼容旧 call 的包装器。preset 参数忽略, 改用 script_category。"""
+    return build_vfx_plan(timeline, video_path, script_category)
 
 
-def _shader_to_ffmpeg_filter(shader_name: str, in_label: str, out_label: str) -> str:
-    """将着色器名转为FFmpeg滤镜片段(简化版)"""
-    from .vfx.glsl_renderer import _FFMPEG_MAP
-    template = _FFMPEG_MAP.get(shader_name, "")
-    if not template:
-        return f"[{in_label}]copy[{out_label}]"
-    return f"[{in_label}]{template}[{out_label}]"
+class VfxPreset:
+    """兼容旧代码的枚举占位"""
+    douyin_hot = "douyin_hot"
+    cinematic = "cinematic"
+    gritty_drill = "gritty_drill"
+    warm_story = "warm_story"
+    clean_business = "clean_business"
+    retro_vhs = "retro_vhs"
 
 
-# ══════════════════════════════════════════════════════════
-# 查询API
-# ══════════════════════════════════════════════════════════
+def get_category_style(category: str) -> dict:
+    """查询某类脚本的剪辑策略"""
+    return CATEGORY_STYLE.get(category, CATEGORY_STYLE["团购售卖"])
 
-def list_presets() -> list[dict]:
-    """列出所有VFX预设"""
+
+def list_categories() -> list[dict]:
+    """列出所有三类脚本的剪辑策略摘要"""
     return [
-        {"name": p.value, "color": PRESET_CONFIG[p][0], "texture": PRESET_CONFIG[p][1],
-         "beat_style": PRESET_CONFIG[p][2]}
-        for p in VfxPreset
+        {"category": cat, "label": s["label"],
+         "hook": s["hook_effects"], "cta": s["cta_effects"]}
+        for cat, s in CATEGORY_STYLE.items()
     ]
-
-
-def get_preset(name: str) -> VfxPreset | None:
-    """按名称获取预设"""
-    for p in VfxPreset:
-        if p.value == name:
-            return p
-    return None
