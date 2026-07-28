@@ -1,68 +1,46 @@
 # 剪辑Agent · 全部成果报告
 
 **日期**: 2026年7月24-27日
-**提交**: 85次代码提交（clip-agent独立项目）
-**测试**: 173项（独立）+ 301项（后端） = **474项全部通过**
-**API Key**: 4/4在线（DeepSeek+Kimi+GLM+Doubao）
+**GitHub**: https://github.com/wzb-bob/clip-agent
+**提交**: 156次
+**测试**: 232（独立）+ 301（后端）= **533项全部通过**
+**API Key**: 4/4在线
 
 ---
 
-## 一、从零接管到生产就绪
+## 版本演进
 
-- 记忆恢复：修复6处模块数不一致 → 统一52模块
-- 项目独立：拆分出独立仓库 `clip-agent/`
-- 测试建立：0 → 173项（11个测试文件）
-- 安全审计：修复1个严重漏洞（eval）+ 3个低风险
-- 门禁全部通过：2.1测试·2.2安全·2.4性能·2.6 CR
+| 版本 | 核心变更 |
+|------|---------|
+| v4.0 | AI导演主导·K2.6+GLM并行·质量4→7 |
+| v4.1 | 统一API·Pixelle集成·渲染修复 |
+| v4.2 | 真实素材验证·SRT/ASS字幕 |
+| v4.3 | 帧级精度·HEVC自动转换 |
+| v5.0 | 四类素材管道·Whisper气口·JianYing草稿·Tab1↔Tab4 |
+| v5.1 | Codex Skill·扣子双通道·产品→视频·PNG字幕·环境检测 |
 
-## 二、核心能力矩阵
+## 五种出片方式
 
-| 能力 | 评分 | 技术 |
-|------|------|------|
-| 脚本理解 | 7/10 | DeepSeek语义·情感弧线·画面描述 |
-| 视觉分析 | 6/10 | K2.6∥GLM-4V并行·OpenCV降级 |
-| 编辑决策 | 7/10 | AI导演主导·帧级精度·美学约束 |
-| 渲染质量 | 6/10 | FFmpeg v2.3·模糊背景·逐词字幕·电影感 |
-| 数字人 | 6/10 | 照片→口播·呼吸感·美颜·自动选声线 |
-| 学习能力 | 5/10 | 偏好记录·历史查询·自动应用 |
-
-## 三、新增52个模块
-
-核心引擎·编辑决策·抖音能力·智能分析·拍摄剪辑·发布体系·蒙太奇·审片·平台·
-语义引擎·联通桥·反馈闭环·导演AI·视频分析·音频理解·数字人·声音克隆·
-插件注册·AI生图·报告生成·统一API·管道追踪·美学约束·节奏引擎
-
-## 四、五种出片方式
-
-```python
-# 1. 统一API（推荐）
-from clip_agent import api
-api.clip("68块！十只活虾！", videos=["素材.mp4"])
-api.digital_human("照片.jpg", "大家好我是老张...")
-
-# 2. 命令行素材模式
-python demo.py "脚本" --video 素材.mp4
-
-# 3. 命令行数字人模式  
-python demo.py "脚本" --photo 照片.jpg
-
-# 4. 批量处理
-python batch.py scripts.csv
-
-# 5. 演示模式
-python demo.py "脚本" --showcase
+```bash
+python demo.py "脚本" --video 素材.mp4                    # AI导演
+python demo.py --jianying --script "..." --talking 口播.mp4  # 剪映草稿
+python demo.py "脚本" --photo 照片.jpg                     # 数字人
+python demo.py "68块!" --product-img 产品.jpg              # 带货视频
+python batch.py scripts.csv                                # 批量
 ```
 
-## 五、诚实差距
+## 核心能力
 
-- 视觉理解依赖外部API（Kimi/GLM），离线时降级为OpenCV
-- 数字人缺真唇形同步（需SadTalker/Wav2Lip+GPU）
-- 未在真实视频素材上测试
-- Whisper中文转录精度有限（small模型）
+- **四类素材**: 口播出镜·店铺环境·产品展示·引导CTA
+- **Whisper气口**: ±16ms帧级精度·5信号融合
+- **SRT字幕**: 不再依赖剪映会员·PNG/ASS/SRT三方案
+- **Codex Skill**: `npx skills add wzb-bob/clip-agent --skill changyi-video-editor`
+- **扣子双通道**: JianYing草稿 + Coze工作流直出
+- **环境检测**: `python setup.py` 一键诊断
 
-## 六、下一步
+## 诚实差距
 
-1. 真实素材端到端测试
-2. SadTalker/Wav2Lip唇形同步
-3. DashScope API Key → 真正AI生图B-roll
-4. 找第一个付费客户验证
+- 字幕烧录到视频仍偶有兼容问题（已有PNG方案降级）
+- 扣子API未实际配置（需COZE_API_KEY）
+- Whisper中文准确度有限（small模型·约70%）
+- 未在真实付费场景验证
