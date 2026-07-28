@@ -52,6 +52,7 @@ def run_four_category_pipeline(
     script_text: str,
     materials: CategoryMaterials,
     output_dir: str = "",
+    turbo: bool = False,
 ) -> JianYingTimeline:
     """
     主入口: 四类素材 → 气口切割 → 时间线排列。
@@ -65,10 +66,14 @@ def run_four_category_pipeline(
     """
     t0 = time.time()
 
-    # Step 1: 气口分析(口播视频)
+    # 🆕 Turbo模式: 跳过Whisper+AI导演·纯规则快速出草稿
+    if turbo:
+        logger.info("⚡ Turbo模式·跳过AI分析")
+
+    # Step 1: 气口分析(口播视频·Turbo模式跳过)
     breath_points = []
     talking_video = materials.talking[0] if materials.talking else ""
-    if talking_video and os.path.exists(talking_video):
+    if talking_video and os.path.exists(talking_video) and not turbo:
         breath_points = _detect_breath_points(talking_video)
         logger.info("气口检测: %d个切点", len(breath_points))
 
@@ -76,8 +81,8 @@ def run_four_category_pipeline(
     segments = _segment_script(script_text)
     logger.info("脚本分段: %d段", len(segments))
 
-    # Step 2.5: AI导演决策(景别·变速·Ken Burns·转场)
-    if segments:
+    # Step 2.5: AI导演决策(Turbo模式跳过)
+    if segments and not turbo:
         try:
             from .director_ai import direct
             semantic_segs = [
