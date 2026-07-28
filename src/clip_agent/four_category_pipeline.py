@@ -237,7 +237,11 @@ def _detect_breath_points(video_path: str) -> list[dict]:
                 })
         for i in range(1, len(word_times)):
             gap_ms = int((word_times[i]["start"] - word_times[i-1]["end"]) * 1000)
-            if gap_ms >= 400:
+            # 自适应阈值: 快语速(>3字/s)用200ms·慢语速用400ms
+            total_dur = word_times[-1]["end"] - word_times[0]["start"] if word_times else 10
+            speech_rate = len(word_times) / max(total_dur, 0.1)
+            threshold = 200 if speech_rate > 3 else 400
+            if gap_ms >= threshold:
                 points.append({
                     "at_sec": round(word_times[i-1]["end"] + gap_ms/2000, 2),
                     "gap_ms": gap_ms,
