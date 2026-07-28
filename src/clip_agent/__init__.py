@@ -80,6 +80,14 @@ from .ai_image_gen import (generate_broll_image, generate_broll_batch)
 # ── 统一API(1) ──
 from .changyi_api import ChangyiAPI, api, APIResult
 
+# ── v5.1 四类素材+剪映(6) ──
+from .four_category_pipeline import (run_four_category_pipeline, CategoryMaterials, TimelineSegment, JianYingTimeline)
+from .jianying_timeline_builder import (build_draft_from_timeline, export_draft_zip, validate_draft)
+from .whisper_srt_generator import (generate_srt_from_video, burn_srt_to_video)
+from .coze_pipeline import (run_coze_pipeline, get_channel_status, get_available_tools)
+from .product_to_video import create_product_video
+from .subtitle_overlay import burn_png_subtitle, render_text_to_png
+
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
 
