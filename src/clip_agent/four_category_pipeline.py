@@ -171,6 +171,24 @@ def run_four_category_pipeline(
 
     logger.info("四类管道完成: %d段·%.1fs·%.1fs", len(timeline_segs), total_dur, elapsed)
 
+    # 🆕 时长保护: 总段长不能超过口播视频的3倍(B-roll填充)
+    if talking_video and os.path.exists(talking_video):
+        import subprocess, json as _json
+        try:
+            r = subprocess.run(["ffprobe","-v","quiet","-print_format","json","-show_format", talking_video],
+                             capture_output=True, text=True, timeout=10)
+            video_dur = float(_json.loads(r.stdout).get("format", {}).get("duration", 30))
+            # 允许总时长不超过视频时长的3倍(口播+2倍B-roll填充)
+            max_dur = video_dur * 3
+            if total_dur > max_dur:
+                logger.warning("脚本时长(%.0fs)超过视频(%.0fs)×3·缩放适配", total_dur, video_dur)
+                scale = max_dur / max(total_dur, 0.1)
+                for s in timeline_segs:
+                    s.duration_sec = round(s.duration_sec * scale, 1)
+                total_dur = sum(s.duration_sec for s in timeline_segs)
+        except Exception:
+            pass
+
     result = JianYingTimeline(
         script_text=script_text,
         segments=timeline_segs,
