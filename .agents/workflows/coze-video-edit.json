@@ -1,0 +1,74 @@
+{
+  "workflow_name": "长益剪辑Agent·四类素材·扣子直出",
+  "description": "口播视频→气口切割→B-roll拼接→字幕烧录→MP4成片",
+  "version": "1.0",
+  "nodes": [
+    {
+      "id": "node_audio_extract",
+      "type": "audio_separate",
+      "config": {
+        "input": "{{talking_video}}",
+        "output_type": "vocals"
+      },
+      "desc": "人声分离·提高Whisper准确度"
+    },
+    {
+      "id": "node_subtitle",
+      "type": "audio_to_subtitle",
+      "config": {
+        "audio": "{{node_audio_extract.output}}",
+        "format": "srt",
+        "max_chars_per_line": 18
+      },
+      "desc": "语音→SRT字幕"
+    },
+    {
+      "id": "node_trim_main",
+      "type": "video_trim",
+      "config": {
+        "video": "{{talking_video}}",
+        "cut_points": "{{breath_points}}"
+      },
+      "desc": "气口精切·主轨分段"
+    },
+    {
+      "id": "node_concat",
+      "type": "concat_videos",
+      "config": {
+        "segments": "{{timeline_segments}}",
+        "transition": "fade",
+        "transition_duration_ms": 300
+      },
+      "desc": "段间拼接·口播↔B-roll交替"
+    },
+    {
+      "id": "node_subtitle_burn",
+      "type": "add_subtitle",
+      "config": {
+        "video": "{{node_concat.output}}",
+        "subtitle": "{{node_subtitle.output}}",
+        "font_size": 48,
+        "position": "bottom"
+      },
+      "desc": "字幕烧录到视频"
+    },
+    {
+      "id": "node_final",
+      "type": "compile_video_audio",
+      "config": {
+        "video": "{{node_subtitle_burn.output}}",
+        "audio": "{{node_audio_extract.output}}"
+      },
+      "desc": "最终合成MP4"
+    }
+  ],
+  "inputs": {
+    "talking_video": "口播视频路径",
+    "breath_points": "气口切点列表[{at_sec,gap_ms}]",
+    "timeline_segments": "时间线段列表[{file,start,duration}]"
+  },
+  "output": {
+    "mp4_path": "{{node_final.output}}",
+    "srt_path": "{{node_subtitle.output}}"
+  }
+}
