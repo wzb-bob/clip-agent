@@ -168,6 +168,9 @@ def write_output_readme(output_dir: str, timeline=None):
     ])
     if jianying_dir:
         lines.append(f"  - 剪映草稿目录: {jianying_dir}")
+        lines.append(f"  - 💡 将 draft_content.json 复制到上述目录即可在剪映中打开")
+    else:
+        lines.append("  - 如已安装剪映·将 draft_content.json 拖入剪映窗口即可")
     lines.append("")
     with open(readme, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
