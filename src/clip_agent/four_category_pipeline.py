@@ -93,8 +93,14 @@ def run_four_category_pipeline(
         except Exception as e:
             logger.debug("SRT生成跳过: %s", e)
 
-    # Step 6: 生成剪映草稿
+    # Step 6: 生成剪映草稿 + 使用说明
     draft_path = ""
+    if output_dir:
+        try:
+            from .jianying_timeline_builder import write_output_readme
+            write_output_readme(output_dir)
+        except Exception:
+            pass
     if output_dir and talking_video:
         draft_path = _generate_jianying_draft(timeline_segs, talking_video, output_dir)
 

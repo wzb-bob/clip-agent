@@ -140,6 +140,53 @@ def validate_draft(draft_path: str) -> dict:
     return result
 
 
+def write_output_readme(output_dir: str, timeline=None):
+    """在输出目录写入使用说明"""
+    readme = os.path.join(output_dir, "使用说明.txt")
+    jianying_dir = _find_jianying_draft_dir()
+    lines = [
+        "═══════════════════════════",
+        "  长益剪辑Agent · 使用说明",
+        "═══════════════════════════",
+        "",
+        "📁 文件说明:",
+        "  draft_content.json  — 剪映草稿文件（拖入剪映即用）",
+    ]
+    if os.path.exists(os.path.join(output_dir, "subtitles.srt")):
+        lines.append("  subtitles.srt       — SRT字幕文件（导入剪映·自动同步）")
+    lines.extend([
+        "",
+        "🚀 使用方法（3步）:",
+        "  1. 打开剪映APP",
+        "  2. 文件→导入草稿→选择 draft_content.json",
+        "  3. 导入SRT字幕文件（如果有）",
+        "  4. 点「智能包装」（会员功能·可选）→ 导出MP4",
+        "",
+        "💡 提示:",
+        "  - 字幕已自动对齐气口时间轴·无需手动调整",
+        "  - 如需精调·直接在剪映时间线拖拽修改",
+    ])
+    if jianying_dir:
+        lines.append(f"  - 剪映草稿目录: {jianying_dir}")
+    lines.append("")
+    with open(readme, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    return readme
+
+
+def _find_jianying_draft_dir() -> str:
+    """自动检测剪映草稿目录"""
+    candidates = [
+        os.path.expandvars(r"%LOCALAPPDATA%\JianyingPro\User Data\Projects\com.lveditor.draft"),
+        os.path.expandvars(r"%USERPROFILE%\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft"),
+        os.path.expandvars(r"%USERPROFILE%\Documents\JianyingPro\User Data\Projects\com.lveditor.draft"),
+    ]
+    for d in candidates:
+        if os.path.exists(d):
+            return d
+    return ""
+
+
 def export_draft_zip(draft_dir: str) -> str:
     """将草稿目录打包为ZIP(方便下载)"""
     zip_path = draft_dir.rstrip("/\\") + ".zip"
