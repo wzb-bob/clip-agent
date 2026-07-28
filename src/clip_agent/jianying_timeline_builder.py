@@ -68,29 +68,66 @@ def build_draft_from_timeline(
 
 def _build_manual_draft(segments, talking_video, output_dir, project_name):
     """手动构建简化版草稿(降级)"""
+    # 收集唯一素材
+    material_map = {}
+    mat_id = 0
+    for seg in segments:
+        if seg.material_file and seg.material_file not in material_map:
+            material_map[seg.material_file] = f"mat_{mat_id}"
+            mat_id += 1
+
     draft = {
         "platform": {"os": "windows"},
         "draft_name": project_name,
-        "draft_info": {"version": 1, "create_time": int(datetime.now().timestamp())},
+        "draft_info": {"version": 7, "create_time": int(datetime.now().timestamp())},
         "canvas_config": {"width": 1080, "height": 1920, "ratio": "9:16"},
-        "materials": {"videos": [], "texts": [], "audios": []},
-        "tracks": [{"id": 0, "type": "video", "segments": []}],
-        "content": {"ai_packaging_meta": {"draft_is_ai_packaging_used": False}},
+        "materials": {
+            "videos": [{"id": mid, "path": fp, "type": "video"} for fp, mid in material_map.items()],
+            "texts": [],
+            "audios": [],
+        },
+        "tracks": [
+            {"id": 0, "type": "video", "segments": []},      # 主视频轨
+            {"id": 1, "type": "video", "segments": []},      # B-roll叠加轨
+            {"id": 2, "type": "text", "segments": []},       # 字幕轨
+        ],
+        "content": {"ai_packaging_meta": {"draft_is_ai_packaging_used": True}},
     }
 
     for seg in segments:
         start_us = int(seg.start_sec * 1_000_000)
         dur_us = int(seg.duration_sec * 1_000_000)
-        draft["tracks"][0]["segments"].append({
-            "id": f"seg_{seg.index}",
-            "start": start_us,
-            "duration": dur_us,
-            "material_type": "video",
-            "source": "upload" if seg.material_file != talking_video else "main",
-            "is_broll": seg.is_broll,
-            "transition": seg.transition,
-            "script_text": seg.script_text[:50],
-        })
+        mat_ref = material_map.get(seg.material_file, "")
+
+        if seg.is_broll and seg.material_file != talking_video:
+            # B-roll → 叠加轨(轨道1)
+            draft["tracks"][1]["segments"].append({
+                "id": f"broll_{seg.index}",
+                "material_id": mat_ref,
+                "target_timerange": {"start": start_us, "duration": dur_us},
+                "source_timerange": {"start": 0, "duration": dur_us},
+                "volume": 0,  # B-roll静音
+            })
+        else:
+            # 口播 → 主轨(轨道0)
+            draft["tracks"][0]["segments"].append({
+                "id": f"main_{seg.index}",
+                "material_id": mat_ref,
+                "target_timerange": {"start": start_us, "duration": dur_us},
+                "source_timerange": {"start": int(seg.start_sec * 1_000_000) if seg.material_file == talking_video else 0,
+                                    "duration": dur_us},
+                "speed": 1.0,
+                "volume": 1.0,
+            })
+
+        # 字幕 → 文本轨(轨道2)
+        if seg.script_text:
+            draft["tracks"][2]["segments"].append({
+                "id": f"sub_{seg.index}",
+                "content": seg.script_text[:50],
+                "target_timerange": {"start": start_us, "duration": dur_us},
+                "style": {"font_size": 48, "alignment": 1, "pos_x": 0.5, "pos_y": 0.85},
+            })
 
     draft_path = os.path.join(output_dir, "draft_content.json")
     with open(draft_path, "w", encoding="utf-8") as f:
