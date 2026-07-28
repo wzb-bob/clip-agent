@@ -87,6 +87,7 @@ from .whisper_srt_generator import (generate_srt_from_video, burn_srt_to_video)
 from .coze_pipeline import (run_coze_pipeline, get_channel_status, get_available_tools)
 from .product_to_video import create_product_video
 from .subtitle_overlay import burn_png_subtitle, render_text_to_png
+from .audio_separator import separate_vocals, enhance_audio_for_whisper
 
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
