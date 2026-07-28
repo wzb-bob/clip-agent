@@ -142,6 +142,7 @@ def validate_draft(draft_path: str) -> dict:
 
 def write_output_readme(output_dir: str, timeline=None):
     """在输出目录写入使用说明"""
+    os.makedirs(output_dir, exist_ok=True)
     readme = os.path.join(output_dir, "使用说明.txt")
     jianying_dir = _find_jianying_draft_dir()
     lines = [
