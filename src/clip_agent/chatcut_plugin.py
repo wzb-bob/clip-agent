@@ -1,8 +1,8 @@
 """
-ChatCut剪辑插件 · 完整搬运 · 扣子12工具本地实现
+ChatCut剪辑插件 · 剪映替代方案 · 扣子12工具本地实现
 
-对标扣子ChatCut插件: 音频→字幕→切分→拼接→字幕烧录→成片
-全部本地运行·零API依赖·一体化编排
+对标扣子ChatCut: 音频→字幕→切分→拼接→字幕烧录→MP4成片
+全部本地运行·零API依赖·不需要剪映
 """
 from __future__ import annotations
 import json, logging, os, tempfile, time
@@ -59,6 +59,27 @@ CHATCUT_TOOLS = {
 }
 
 
+def _ensure_x264(video_path: str) -> str | None:
+    """HEVC自动转x264(渲染兼容)"""
+    try:
+        import json, subprocess
+        r = subprocess.run(["ffprobe","-v","quiet","-print_format","json","-show_streams", video_path],
+                         capture_output=True, text=True, timeout=10)
+        streams = json.loads(r.stdout).get("streams", [])
+        is_hevc = any(s.get("codec_name") in ("hevc", "h265") for s in streams)
+        if not is_hevc:
+            return None
+        out = str(Path(video_path).parent / f"_x264_{Path(video_path).name}.mp4")
+        if os.path.exists(out):
+            return out
+        subprocess.run(["ffmpeg","-y","-hide_banner","-loglevel","error",
+            "-i", video_path, "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k", "-pix_fmt", "yuv420p", out], timeout=300)
+        return out if os.path.exists(out) else None
+    except Exception:
+        return None
+
+
 def get_chatcut_status() -> dict:
     """ChatCut插件搬运状态"""
     total = len(CHATCUT_TOOLS)
@@ -106,6 +127,13 @@ def run_chatcut_workflow(
     out.mkdir(parents=True, exist_ok=True)
 
     try:
+        # Step 0: HEVC自动转x264(口播+B-roll全部)
+        converted = _ensure_x264(str(vp))
+        if converted:
+            vp = Path(converted)
+        broll_videos = [_ensure_x264(b) or b for b in (broll_videos or [])]
+        product_videos = [_ensure_x264(p) or p for p in (product_videos or [])]
+
         # Step 1+2: 音频处理
         from .audio_separator import enhance_audio_for_whisper
         enhanced = enhance_audio_for_whisper(str(vp))
@@ -128,12 +156,43 @@ def run_chatcut_workflow(
         results["steps"]["video_trim"] = len(timeline.segments)
         results["steps"]["concat_videos"] = bool(timeline.draft_path)
 
-        # Step 4-7: 如果生成了草稿则打包
-        if timeline.draft_path:
+        # Step 4-7: 渲染MP4(替代剪映)
+        mp4_path = str(out / f"成片_{vp.stem}.mp4")
+        try:
+            from .pro_renderer import RenderJob, render_professional
+            segs = []
+            for s in timeline.segments:
+                if os.path.exists(s.material_file):
+                    segs.append({
+                        "file": s.material_file,
+                        "duration": s.duration_sec,
+                        "start_sec": s.start_sec,
+                        "broll": s.is_broll,
+                        "text": s.script_text[:30] if s.script_text else "",
+                        "color_grade": "warm",
+                        "transition": s.transition,
+                    })
+            if segs:
+                rj = RenderJob(segments=segs, output_path=mp4_path, width=1080, height=1920)
+                mp4_result = render_professional(rj)
+                if mp4_result.success:
+                    results["output"] = mp4_path
+                    results["steps"]["compile"] = True
+                    results["duration"] = mp4_result.duration_sec
+                    results["size_mb"] = mp4_result.file_size_mb
+                    logger.info("MP4渲染: %.1fMB·%.1fs", mp4_result.file_size_mb, mp4_result.render_time_sec)
+                else:
+                    results["steps"]["compile"] = False
+                    results["error"] = mp4_result.error
+        except Exception as e:
+            results["steps"]["compile"] = False
+            results["error"] = str(e)[:100]
+
+        # 降级: 生成草稿ZIP(备用)
+        if not results.get("output") and timeline.draft_path:
             from .jianying_timeline_builder import export_draft_zip
-            zip_path = export_draft_zip(timeline.draft_path)
-            results["output"] = zip_path
-            results["steps"]["compile"] = bool(zip_path)
+            results["output"] = export_draft_zip(timeline.draft_path)
+            results["steps"]["compile"] = bool(results["output"])
 
         results["success"] = True
         results["elapsed"] = round(time.time() - t0, 1)
