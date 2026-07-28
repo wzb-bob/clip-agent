@@ -81,7 +81,7 @@ def run_four_category_pipeline(
 
     total_dur = sum(s.duration_sec for s in timeline_segs)
 
-    # Step 5: 生成SRT字幕(口播视频→Whisper→SRT)
+    # Step 5: 生成字幕(SRT文件·导出可用)
     srt_path = ""
     if talking_video and os.path.exists(talking_video):
         try:
@@ -92,6 +92,20 @@ def run_four_category_pipeline(
                 logger.info("SRT字幕: %s", srt_path)
         except Exception as e:
             logger.debug("SRT生成跳过: %s", e)
+
+        # 🆕 PNG字幕烧录(直接嵌入视频·比FFmpeg文字滤镜更可靠)
+        if output_dir and timeline_segs:
+            try:
+                from .subtitle_overlay import render_text_to_png
+                # 生成每段的PNG字幕
+                for seg in timeline_segs:
+                    if seg.script_text:
+                        png = render_text_to_png(seg.script_text[:30], 1080, 1920, font_size=52)
+                        if png:
+                            seg._png_path = png  # 动态属性
+                logger.debug("PNG字幕: %d张", sum(1 for s in timeline_segs if hasattr(s, '_png_path')))
+            except Exception:
+                pass
 
     # Step 6: 生成剪映草稿 + 使用说明
     draft_path = ""
