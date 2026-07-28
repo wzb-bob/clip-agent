@@ -76,6 +76,33 @@ def run_four_category_pipeline(
     segments = _segment_script(script_text)
     logger.info("脚本分段: %d段", len(segments))
 
+    # Step 2.5: AI导演决策(景别·变速·Ken Burns·转场)
+    if segments:
+        try:
+            from .director_ai import direct
+            semantic_segs = [
+                {"text": s.get("text",""), "role": s.get("role","body"),
+                 "duration_sec": s.get("duration_sec", 3.0),
+                 "broll_needed": s.get("broll_needed", True),
+                 "visual_need": "", "shot_type": "MS",
+                 "text_overlay": "", "text_position": "bottom",
+                 "start_sec": i * 3.0}
+                for i, s in enumerate(segments)
+            ]
+            plan = direct("老板IP", semantic_segs, use_ai=True)
+            if plan and plan.segments:
+                # 用AI导演的决策覆盖简单规则
+                for i, s in enumerate(segments):
+                    if i < len(plan.segments):
+                        d = plan.segments[i]
+                        s["shot_type"] = d.shot_type
+                        s["duration_sec"] = d.duration_sec
+                        if d.is_broll: s["broll_needed"] = True
+                        if d.text_overlay: s["text_overlay"] = d.text_overlay
+                logger.info("AI导演: %d段增强", len(plan.segments))
+        except Exception as e:
+            logger.debug("AI导演跳过: %s", e)
+
     # Step 3+4: 素材匹配 + 时间线排列
     timeline_segs = _build_timeline(segments, materials, breath_points, talking_video)
 
