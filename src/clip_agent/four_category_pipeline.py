@@ -66,6 +66,11 @@ def run_four_category_pipeline(
     """
     t0 = time.time()
 
+    # 🆕 运行前预检
+    preflight = _preflight_check(materials, script_text)
+    if not preflight["ok"]:
+        logger.warning("预检: %s", preflight["issues"])
+
     # 🆕 Turbo模式: 跳过Whisper+AI导演·纯规则快速出草稿
     if turbo:
         logger.info("⚡ Turbo模式·跳过AI分析")
@@ -186,6 +191,23 @@ def run_four_category_pipeline(
         result.total_duration = sum(s.duration_sec for s in result.segments)
 
     return result
+
+
+def _preflight_check(materials: CategoryMaterials, script: str) -> dict:
+    """管道预检·返回问题和建议"""
+    issues = []
+    if not script or len(script.strip()) < 3:
+        issues.append("脚本太短(<3字)")
+    if not materials.talking:
+        issues.append("缺少口播素材·将使用纯脚本时间线")
+    if not materials.environment and not materials.product:
+        issues.append("缺少B-roll素材·所有段将使用口播主轨")
+    return {
+        "ok": len(issues) == 0 or all("缺少" in i for i in issues),
+        "issues": issues,
+        "素材": f"口播{len(materials.talking)}·环境{len(materials.environment)}·产品{len(materials.product)}·CTA{len(materials.cta)}",
+        "脚本": f"{len(script)}字",
+    }
 
 
 def _detect_breath_points(video_path: str) -> list[dict]:
