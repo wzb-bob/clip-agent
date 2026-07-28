@@ -88,6 +88,8 @@ from .coze_pipeline import (run_coze_pipeline, get_channel_status, get_available
 from .product_to_video import create_product_video
 from .subtitle_overlay import burn_png_subtitle, render_text_to_png
 from .audio_separator import separate_vocals, enhance_audio_for_whisper
+from .chatcut_plugin import get_chatcut_status, run_chatcut_workflow, CHATCUT_TOOLS
+from .transcript_corrector import correct_transcript, align_transcript_to_timestamps
 
 # ── 发布体系(1) ──
 from .publish_scheduler import (PLATFORMS, PublishTask, PublishResult, get_platform_status, publish_sync, schedule_publish)
