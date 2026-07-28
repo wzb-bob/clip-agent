@@ -103,6 +103,9 @@ def run_chatcut_workflow(
     output_dir: str = "",
     broll_videos: list[str] = None,
     product_videos: list[str] = None,
+    *,
+    vfx_preset: str = "douyin_hot",   # VFX创意预设 (douyin_hot/cinematic/gritty_drill/warm_story/clean_business/retro_vhs)
+    script_category: str = "团购售卖",  # 脚本类别(影响段效果分配)
 ) -> dict:
     """
     ChatCut完整工作流·一键执行全部7个已搬运工具。
@@ -156,22 +159,52 @@ def run_chatcut_workflow(
         results["steps"]["video_trim"] = len(timeline.segments)
         results["steps"]["concat_videos"] = bool(timeline.draft_path)
 
-        # Step 4-7: 渲染MP4(替代剪映)
+        # Step 3.5: VFX增强 — 节拍检测+效果分配+滤镜链生成
+        try:
+            from .chatcut_vfx import enhance_timeline, VfxPreset
+            vfx_preset_enum = VfxPreset(vfx_preset) if vfx_preset in [p.value for p in VfxPreset] else VfxPreset.douyin_hot
+            vfx_result = enhance_timeline(timeline, str(vp), vfx_preset_enum, script_category)
+            if vfx_result.success:
+                results["steps"]["vfx_enhance"] = True
+                results["vfx"] = {
+                    "preset": vfx_result.preset,
+                    "beats": vfx_result.beat_count,
+                    "bpm": vfx_result.bpm,
+                    "filters": sum(len(s.get("filters", {}).get("chain", [])) for s in vfx_result.segments),
+                }
+                logger.info("VFX增强: %d拍·%.0fBPM·%d滤镜·预设=%s",
+                           vfx_result.beat_count, vfx_result.bpm,
+                           results["vfx"]["filters"], vfx_preset)
+            else:
+                results["steps"]["vfx_enhance"] = False
+                vfx_result = None
+                logger.warning("VFX增强跳过: %s", vfx_result.error if vfx_result else "unknown")
+        except Exception as e:
+            results["steps"]["vfx_enhance"] = False
+            vfx_result = None
+            logger.warning("VFX增强失败(降级继续): %s", str(e)[:100])
+
+        # Step 4-7: 渲染MP4(替代剪映)——使用VFX增强后的段数据
         mp4_path = str(out / f"成片_{vp.stem}.mp4")
         try:
             from .pro_renderer import RenderJob, render_professional
             segs = []
-            for s in timeline.segments:
+            for i, s in enumerate(timeline.segments):
                 if os.path.exists(s.material_file):
-                    segs.append({
+                    # VFX增强数据(如果有)
+                    vfx_seg = vfx_result.segments[i] if (vfx_result and i < len(vfx_result.segments)) else {}
+                    seg_data = {
                         "file": s.material_file,
                         "duration": s.duration_sec,
                         "start_sec": s.start_sec,
                         "broll": s.is_broll,
                         "text": s.script_text[:30] if s.script_text else "",
-                        "color_grade": "warm",
-                        "transition": s.transition,
-                    })
+                        "color_grade": vfx_seg.get("color_grade", "warm") if vfx_seg else "warm",
+                        "transition": vfx_seg.get("transition_in", s.transition) if vfx_seg else s.transition,
+                        "vfx_filters": vfx_seg.get("filters", {}).get("chain", []) if vfx_seg else [],
+                        "vfx_role": vfx_seg.get("role", "body") if vfx_seg else "body",
+                    }
+                    segs.append(seg_data)
             if segs:
                 rj = RenderJob(segments=segs, output_path=mp4_path, width=1080, height=1920)
                 mp4_result = render_professional(rj)
