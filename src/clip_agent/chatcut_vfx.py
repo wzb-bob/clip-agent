@@ -22,41 +22,36 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════
 
 CATEGORY_STYLE = {
+    # 只用eq调色+vignette暗角+noise颗粒——三种100%可靠的FFmpeg滤镜
     "团购售卖": {
-        "label": "价格冲击型",
-        "global_color": "warm_boost",     # 暖色增强·食物更有食欲
-        "global_texture": "none",         # 干净利落·不分散注意力
-        "beat_preset": "douyin_hot",      # 强节奏·频闪+RGB
-        "hook_effects": ["price_pop", "flash"],     # 钩子=价格弹出+闪光
+        "label": "鲜艳冲击型",
+        "global_color": "warm_boost",     # eq: 暖色增强·食物更有食欲
+        "global_texture": "none",         # 干净·不分散注意力
+        "hook_effects": ["warm_boost"],             # 钩子=暖色
         "body_effects": ["warm_grade"],             # 主体=暖色调
         "broll_effects": ["bloom_light", "slow_zoom"], # B-roll=柔光+慢缩
-        "cta_effects": ["zoom_pulse", "red_flash"],  # CTA=缩放脉冲+红闪
-        "transition": "push",             # 推入转场=紧凑感
-        "text_style": "bold_price",       # 粗体价格文字
+        "cta_effects": ["pulse_ring"],              # CTA=脉冲圈(drawbox,无字体依赖)
+        "transition": "crossfade",        # 交叉淡入
     },
     "老板IP": {
-        "label": "故事信任型",
-        "global_color": "film_warm",      # 胶片暖色·怀旧真实
-        "global_texture": "film_grain",   # 胶片颗粒·增加质感
-        "beat_preset": "melodic_subtle",  # 弱节奏·不抢戏
-        "hook_effects": ["vignette_soft"],          # 钩子=柔暗角·聚焦人脸
+        "label": "故事质感型",
+        "global_color": "film_warm",      # eq: 胶片暖色·怀旧真实
+        "global_texture": "film_grain_light", # noise: 胶片颗粒·增加质感
+        "hook_effects": ["vignette_soft"],          # 钩子=暗角·聚焦人脸
         "body_effects": ["film_grain_light"],       # 主体=轻颗粒
-        "broll_effects": ["crossfade_slow"],        # B-roll=慢交叉淡入
-        "cta_effects": ["glow_warm"],               # CTA=暖光引导
-        "transition": "crossfade",        # 交叉淡入=娓娓道来
-        "text_style": "clean_subtitle",   # 干净字幕
+        "broll_effects": ["crossfade_slow"],        # B-roll=慢淡入
+        "cta_effects": ["glow_warm"],               # CTA=暖光引导(boxblur+blend)
+        "transition": "crossfade",        # 交叉淡入
     },
     "引流进店": {
-        "label": "氛围诱惑型",
-        "global_color": "bright_clean",   # 明亮干净·展示环境
+        "label": "明亮引导型",
+        "global_color": "bright_clean",   # eq: 明亮干净·展示环境
         "global_texture": "none",         # 无颗粒·保持清晰
-        "beat_preset": "party_hype",      # 派对能量·强节奏
-        "hook_effects": ["glitch_intro", "speed_ramp"],   # 钩子=故障开场+变速
-        "body_effects": ["bright_grade", "stabilize"],    # 主体=明亮+稳定
-        "broll_effects": ["kaleidoscope_light", "glow"],  # B-roll=万花筒+发光
-        "cta_effects": ["location_pin", "pulse_ring"],    # CTA=定位针+脉冲圈
-        "transition": "zoom_transition",  # 缩放转场=空间感
-        "text_style": "location_tag",     # 地点标签
+        "hook_effects": ["speed_ramp"],             # 钩子=变速(setpts)
+        "body_effects": ["bright_grade", "stabilize"], # 主体=明亮+防抖
+        "broll_effects": ["bloom_light", "glow_warm"], # B-roll=柔光+暖光
+        "cta_effects": ["pulse_ring"],              # CTA=脉冲圈
+        "transition": "crossfade",        # 交叉淡入
     },
 }
 
