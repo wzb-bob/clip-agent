@@ -123,6 +123,16 @@ def run_four_category_pipeline(
         draft_path=draft_path,
     )
     result.srt_path = srt_path  # 动态属性
+
+    # 容错: 无素材时生成兜底时间线（纯脚本分段·无视频）
+    if not result.segments:
+        logger.warning("无有效素材·生成纯脚本时间线")
+        result.segments = [
+            TimelineSegment(i+1, s.get("text",""), i*3.0, s.get("duration_sec",3.0), "", "placeholder", False, "cut")
+            for i, s in enumerate(_segment_script(script_text))
+        ]
+        result.total_duration = sum(s.duration_sec for s in result.segments)
+
     return result
 
 
