@@ -255,6 +255,7 @@ def main():
     parser.add_argument("--env", nargs="*", default=[], help="环境素材")
     parser.add_argument("--product", nargs="*", default=[], help="产品素材")
     parser.add_argument("--cta", nargs="*", default=[], help="CTA素材")
+    parser.add_argument("--product-img", help="产品图片·带货模式")
     parser.add_argument("--json", action="store_true", help="JSON输出(机器可读)")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细日志")
     parser.add_argument("--quiet", "-q", action="store_true", help="静默模式·仅输出结果")
@@ -280,6 +281,17 @@ def main():
             script_type = "引流进店"
         else:
             script_type = "团购售卖"
+
+    if args.product_img and args.script:
+        print_banner()
+        from clip_agent.product_to_video import create_product_video
+        points = args.script.split("。")[:5]
+        result = create_product_video(args.product_img, points[0] if points else "新品上市!", points[1:], output_path=args.output or f"./product_video_{int(time.time())}.mp4")
+        if result["success"]:
+            print(f"✅ 带货视频: {result['video_path']} ({result['duration']:.0f}s)")
+        else:
+            print(f"❌ {result.get('error','失败')}")
+        return
 
     if args.jianying and args.script:
         print_banner()
