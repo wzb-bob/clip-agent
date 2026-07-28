@@ -80,6 +80,8 @@ def run_chatcut_workflow(
     video_path: str,
     script_text: str = "",
     output_dir: str = "",
+    broll_videos: list[str] = None,
+    product_videos: list[str] = None,
 ) -> dict:
     """
     ChatCut完整工作流·一键执行全部7个已搬运工具。
@@ -116,7 +118,12 @@ def run_chatcut_workflow(
 
         # Step 3: 气口切割(如果已经跑过四类管道就用其结果)
         from .four_category_pipeline import run_four_category_pipeline, CategoryMaterials
-        materials = CategoryMaterials(talking=[str(vp)])
+        materials = CategoryMaterials(
+            talking=[str(vp)],
+            environment=broll_videos or [],
+            product=product_videos or [],
+            cta=[],
+        )
         timeline = run_four_category_pipeline(script_text or "口播脚本", materials, output_dir=str(out))
         results["steps"]["video_trim"] = len(timeline.segments)
         results["steps"]["concat_videos"] = bool(timeline.draft_path)
