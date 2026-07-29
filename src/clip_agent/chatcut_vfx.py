@@ -342,6 +342,11 @@ def build_vfx_plan(
 # 任何一个pass失败都能清晰定位问题。
 # ══════════════════════════════════════════════════════════
 
+# 抑制Windows上fontconfig警告(FFmpeg用直接字体路径,不需要fontconfig)
+import os as _os
+_FFMPEG_ENV = {**_os.environ, 'FONTCONFIG_PATH': _os.devnull, 'FC_DEBUG': '0'}
+
+
 def render_with_vfx(
     vfx_plan: VfxPlan,
     segment_files: list[tuple[str, float]],
@@ -407,7 +412,7 @@ def render_with_vfx(
                     temp_out,
                 ]
 
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
             if proc.returncode != 0 or not os.path.exists(temp_out):
                 logger.warning("段%d渲染失败: %s", i, proc.stderr[:100])
                 # 降级: 用原文件
@@ -432,7 +437,7 @@ def render_with_vfx(
             "-an",
             concat_out,
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
         if proc.returncode != 0:
             return False, f"拼接失败: {proc.stderr[:200]}"
 
@@ -449,7 +454,7 @@ def render_with_vfx(
                 "-an",
                 final_out,
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
             if proc.returncode == 0:
                 concat_out = final_out
 
@@ -466,7 +471,7 @@ def render_with_vfx(
                 "-map", "0:v:0", "-map", "1:a:0",
                 with_audio,
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
             if proc.returncode == 0:
                 concat_out = with_audio
 
@@ -483,7 +488,7 @@ def render_with_vfx(
                     "-c:a", "copy",
                     with_subs,
                 ]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
                 if proc.returncode == 0:
                     concat_out = with_subs
                 else:
@@ -505,7 +510,7 @@ def render_with_vfx(
                 "-shortest",
                 with_bgm,
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
             if proc.returncode == 0:
                 concat_out = with_bgm
 
@@ -518,7 +523,7 @@ def render_with_vfx(
             "-shortest",
             output_path,
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
         if proc.returncode == 0 and os.path.exists(output_path):
             size_mb = os.path.getsize(output_path) / 1024 / 1024
             logger.info("VFX渲染完成: %.1fMB → %s", size_mb, output_path)
