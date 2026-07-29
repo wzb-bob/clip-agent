@@ -414,6 +414,76 @@ JSON格式:
         return job
 
     # ===== Stage 6: 导出 =====
+    def _render_with_fallback(self, video_segments: list, job: ExecutionJob,
+                               default_color: str, output_dir: str) -> str | None:
+        """三级降级渲染: VFX增强 → 基础pro_renderer → 剪映草稿(已有)
+
+        返回: MP4路径 或 None
+        """
+        mp4_path = os.path.join(output_dir, "成片_AI预览.mp4")
+
+        # Level 1: VFX增强渲染 (chatcut_vfx)
+        try:
+            from .chatcut_vfx import build_vfx_plan, render_with_vfx
+            from dataclasses import dataclass
+
+            @dataclass
+            class _TimelineSeg:
+                material_file: str = ""
+                duration_sec: float = 2.0
+                start_sec: float = 0.0
+                is_broll: bool = False
+                script_text: str = ""
+
+            @dataclass
+            class _Timeline:
+                segments: list = None
+                draft_path: str = ""
+
+            segs = []
+            for s in video_segments:
+                segs.append(_TimelineSeg(
+                    material_file=s.get("file", ""),
+                    duration_sec=s.get("duration", 2.0),
+                    start_sec=s.get("start_sec", 0.0),
+                    is_broll=s.get("broll", False),
+                    script_text=s.get("text", ""),
+                ))
+            tl = _Timeline(segments=segs)
+
+            script_text = " ".join(s.get("text", "") for s in video_segments)
+            if not script_text:
+                script_text = job.script_text
+
+            vfx_plan = build_vfx_plan(tl, video_segments[0].get("file", ""),
+                                       job.script_type)
+            if vfx_plan.success:
+                segment_files = [(s.get("file", ""), s.get("duration", 2.0))
+                                for s in video_segments if s.get("file")]
+                if segment_files:
+                    ok, path = render_with_vfx(vfx_plan, segment_files,
+                                               output_path=mp4_path)
+                    if ok and os.path.exists(path):
+                        job.enhancement_report["render_level"] = "vfx"
+                        return path
+        except Exception as e:
+            logger.debug("VFX渲染降级: %s", str(e)[:80])
+
+        # Level 2: 基础pro_renderer (无VFX)
+        try:
+            from .pro_renderer import RenderJob, render_professional
+            render_job = RenderJob(segments=video_segments, output_path=mp4_path)
+            result = render_professional(render_job)
+            if result.success and os.path.exists(mp4_path):
+                job.enhancement_report["render_level"] = "basic"
+                return mp4_path
+        except Exception as e:
+            logger.debug("基础渲染降级: %s", str(e)[:80])
+
+        # Level 3: 剪映草稿已在export()中生成，这里返回None即可
+        job.enhancement_report["render_level"] = "jianying_draft_only"
+        return None
+
     def export(self, job: ExecutionJob, output_dir: str = "") -> ExecutionJob:
         """导出: 剪映草稿(首选·始终生成) → 打开剪映APP可手动精调
         MP4渲染(备选·有素材时自动生成) → 快速预览用"""
@@ -456,15 +526,14 @@ JSON格式:
 
             if video_segments and output_dir:
                 try:
-                    from .pro_renderer import RenderJob, render_professional
-                    mp4_path = os.path.join(output_dir, "成片_AI预览.mp4")
-                    render_job = RenderJob(segments=video_segments, output_path=mp4_path,
-                                          bgm_volume=job.edit_decisions.get("audio_mix", {}).get("bgm_volume", 0.3))
-                    mp4_result = render_professional(render_job)
-                    if mp4_result.success:
+                    # 尝试VFX增强渲染
+                    mp4_path = self._render_with_fallback(
+                        video_segments, job, default_color, output_dir)
+                    if mp4_path and os.path.exists(mp4_path):
                         job.enhancement_report["mp4_rendered"] = True
                         job.enhancement_report["mp4_path"] = mp4_path
-                        job.enhancement_report["mp4_size_mb"] = mp4_result.file_size_mb
+                        job.enhancement_report["mp4_size_mb"] = round(
+                            os.path.getsize(mp4_path) / 1024 / 1024, 1)
                 except Exception as e:
                     logger.debug("MP4渲染跳过: %s", e)
 

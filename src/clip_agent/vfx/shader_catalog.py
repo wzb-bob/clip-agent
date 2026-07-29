@@ -54,6 +54,7 @@ class ShaderDef:
     file: str
     desc: str = ""
     params: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    available: bool = True  # FFmpeg映射可用?
     # params: {name: (default, min, max)}
 
 

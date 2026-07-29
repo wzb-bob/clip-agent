@@ -228,10 +228,10 @@ class BeatTriggerEngine:
             sy += math.sin(angle) * env * 8
         return sx, sy
 
-    # ── FFmpeg滤镜生成 ──
+    # ── FFmpeg滤镜生成 ⚠️ DEPRECATED ──
 
     def to_ffmpeg_chain(self, input_label: str = "0", output_label: str = "v") -> str:
-        """将当前活跃效果转换为FFmpeg滤镜链"""
+        """⚠️ 已弃用: geq闪白+静态crop震动效果粗糙。使用chatcut_vfx的eq/noise/vignette替代。"""
         params = self.current_effect_params
         filters = []
 
