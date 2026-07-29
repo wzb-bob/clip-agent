@@ -1,10 +1,8 @@
 """
-字幕烧录 · ASS格式 · FFmpeg原生支持
+字幕烧录 · SRT格式 · FFmpeg subtitles滤镜
 
-ASS格式比SRT更可靠:
-- 原生支持样式(字号/颜色/边框/阴影)
-- 不需force_style参数(避免Windows兼容问题)
-- FFmpeg ass滤镜处理中文字体更稳定
+改用SRT替代ASS: Windows上ASS滤镜路径解析有bug(original_size)。
+SRT+force_style参数更可靠。
 """
 from __future__ import annotations
 import logging, os, subprocess, tempfile
@@ -14,22 +12,22 @@ logger = logging.getLogger(__name__)
 
 
 def burn_subtitles(video_path: str, segments: list[dict], output_path: str,
-                   font_size: int = 56) -> str | None:
+                   font_size: int = 20) -> str | None:
     if not segments:
         return None
 
-    # 1. 生成ASS字幕文件
-    ass_path = tempfile.mktemp(suffix=".ass")
-    _generate_ass(segments, ass_path, font_size)
+    # 生成SRT字幕
+    srt_path = tempfile.mktemp(suffix=".srt")
+    _generate_srt(segments, srt_path)
 
-    # 2. FFmpeg ass滤镜烧录
+    # FFmpeg subtitles滤镜(比ass滤镜Windows兼容性好)
     tmp = tempfile.mktemp(suffix=".mp4")
-    safe_ass = ass_path.replace("\\", "/")
+    safe_srt = srt_path.replace("\\", "/")
     try:
         subprocess.run([
             "ffmpeg","-y","-hide_banner","-loglevel","error",
             "-i", video_path,
-            "-vf", f"ass='{safe_ass}'",
+            "-vf", f"subtitles='{safe_srt}':force_style='FontSize={font_size},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2'",
             "-c:v","libx264","-preset","fast","-crf","18",
             "-c:a","copy",
             tmp
@@ -38,12 +36,35 @@ def burn_subtitles(video_path: str, segments: list[dict], output_path: str,
             os.replace(tmp, output_path)
             return output_path
     except Exception as e:
-        logger.warning("ASS字幕烧录失败: %s", e)
+        logger.debug("字幕烧录跳过: %s", e)
     finally:
-        for f in [ass_path, tmp]:
+        for f in [srt_path, tmp]:
             try: os.remove(f)
             except: pass
     return None
+
+
+def _generate_srt(segments: list[dict], output_path: str):
+    """生成SRT字幕文件"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        for i, s in enumerate(segments):
+            start_sec = s.get("start_sec", s.get("start", 0))
+            dur = s.get("duration_sec", s.get("duration", 2))
+            end_sec = start_sec + dur
+            text = s.get("text", s.get("text_overlay", ""))
+            if not text:
+                continue
+            f.write(f"{i+1}\n")
+            f.write(f"{_fmt_time(start_sec)} --> {_fmt_time(end_sec)}\n")
+            f.write(f"{text}\n\n")
+
+
+def _fmt_time(sec: float) -> str:
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = int(sec % 60)
+    ms = int((sec % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def _generate_ass(segments: list[dict], output_path: str, font_size: int):

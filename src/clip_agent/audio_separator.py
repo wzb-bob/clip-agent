@@ -49,7 +49,7 @@ def _separate_ffmpeg(input_path: str, output_path: str) -> str | None:
             "-i", input_path,
             "-af",
             "highpass=f=80,lowpass=f=8000,"
-            "anlmdn=s=0.0003:p=0.0001:r=0.001,"
+            "anlmdn=s=0.001:p=0.001:r=0.01,"
             "loudnorm=I=-16:TP=-1.5:LRA=11,"
             "crystalizer=i=2.0",  # 增强中频(人声)
             "-vn",  # 不要视频

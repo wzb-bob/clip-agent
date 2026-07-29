@@ -119,15 +119,19 @@ def _generate_simple_draft(sentences, output_dir: str = "") -> str:
     import json
     draft = {
         "version": "1.0",
-        "sentences": [],
+        "segments": [],
         "total_duration": sum(s.duration_sec for s in sentences),
     }
     for s in sentences:
-        draft["sentences"].append({
+        draft["segments"].append({
+            "id": f"main_{s.segment_id}",
             "text": s.text_overlay or "",
             "start": s.start_sec,
             "duration": s.duration_sec,
+            "start_sec": s.start_sec,
+            "duration_sec": s.duration_sec,
             "broll": s.is_broll,
+            "sub_type": "broll" if s.is_broll else "talking",
             "audio": s.audio_file if s.audio_status == "uploaded" else "",
             "video": s.video_file if s.video_status == "uploaded" else "",
         })

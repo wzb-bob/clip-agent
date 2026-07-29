@@ -176,7 +176,7 @@ def render_professional(job: RenderJob) -> RenderResult:
         # 检查是否有音频轨 → 加loudnorm归一化
         has_audio = _probe_has_audio(fp)
         # Audio chain: denoise → loudnorm → acompressor(AGC-like)
-        af_parts = ["anlmdn=s=0.0001", "loudnorm=I=-16:TP=-1.5:LRA=11",
+        af_parts = ["anlmdn=s=0.001", "loudnorm=I=-16:TP=-1.5:LRA=11",
                      "acompressor=threshold=-20dB:ratio=2:attack=5:release=50"] if has_audio else []
 
         # 🐛 段偏移: 同文件多段需用-ss跳到正确位置
