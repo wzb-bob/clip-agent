@@ -550,7 +550,7 @@ def render_with_vfx(
                     if proc.returncode == 0:
                         concat_out = with_subs
 
-        # ── Pass 6: BGM混音 ──
+        # ── Pass 6: BGM混音(真sidechain闪避·人声时BGM自动降低) ──
         if bgm_path and os.path.exists(bgm_path):
             with_bgm = os.path.join(tmpdir, "with_bgm.mp4")
             cmd = [
@@ -558,8 +558,10 @@ def render_with_vfx(
                 "-i", concat_out,
                 "-i", bgm_path,
                 "-filter_complex",
-                f"[1:a]volume={bgm_volume},aloop=loop=-1:size=2e+09[bgm];"
-                f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[amix]",
+                # BGM循环+归一化 → sidechain压缩(人声轨触发) → 与人声混合
+                f"[1:a]aloop=loop=-1:size=2e+09,volume=0.8[bgm];"
+                f"[bgm][0:a]sidechaincompress=threshold=0.02:ratio=5:attack=15:release=150:level_sc=1[bgm_ducked];"
+                f"[0:a][bgm_ducked]amix=inputs=2:duration=first:weights=1 0.35[amix]",
                 "-map", "0:v:0", "-map", "[amix]",
                 "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "192k",
@@ -824,41 +826,50 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
         start_ts = accum
 
         if role in ("hook", "cta") and text:
-            template_file = ""
-            font_size = 48
-            font_color = "white"
-            y_pos = int(height * 0.82)
             cat = plan.category
+            overlays_to_add = []  # 一个段可能叠加多个模板
 
-            if role == "cta":
-                if cat == "引流进店":
-                    template_file = templates_dir / "location_bg.mp4"
-                    font_color = "black"
-                else:
-                    template_file = templates_dir / "cta_bg.mp4"
-                y_pos = int(height * 0.78)
-                font_size = 44
-            elif role == "hook":
-                if cat == "引流进店":
-                    template_file = templates_dir / "flash_bg.mp4"
-                    font_color = "black"
-                else:
-                    template_file = templates_dir / "price_bg.mp4"
-                y_pos = int(height * 0.18)
-                font_size = 56
+            if role == "hook":
+                # hook_glow: 大尺寸红色柔光背景(居中·营造氛围)
+                gf = templates_dir / "hook_glow.mp4"
+                if gf.exists():
+                    overlays_to_add.append({
+                        "file": str(gf), "start": start_ts, "duration": min(dur, 3.0),
+                        "x": int((width - 900) / 2), "y": int(height * 0.05),
+                        "text": "", "font_size": 0,
+                    })
+                # 价格条
+                bar_f = templates_dir / ("flash_bg.mp4" if cat == "引流进店" else "price_bg.mp4")
+                if bar_f.exists():
+                    fc = "black" if cat == "引流进店" else "white"
+                    overlays_to_add.append({
+                        "file": str(bar_f), "start": start_ts, "duration": min(dur, 2.5),
+                        "x": int((width - 800) / 2), "y": int(height * 0.15),
+                        "text": text, "font_size": 56, "font_color": fc,
+                    })
 
-            if template_file.exists():
-                overlays.append({
-                    "file": str(template_file),
-                    "start": start_ts,
-                    "duration": min(dur, 2.5),
-                    "x": int((width - 800) / 2),
-                    "y": y_pos,
-                    "text": text,
-                    "font_size": font_size,
-                    "font_color": font_color,
-                    "text_y_offset": 50,  # drawtext在模板上方
-                })
+            elif role == "cta":
+                # cta_ring: 红色圆环框(全宽·聚焦CTA区域)
+                rf = templates_dir / "cta_ring.mp4"
+                if rf.exists():
+                    overlays_to_add.append({
+                        "file": str(rf), "start": start_ts, "duration": min(dur, 2.5),
+                        "x": 0, "y": int(height * 0.65),
+                        "text": "", "font_size": 0,
+                    })
+                # CTA条
+                bar_f = templates_dir / ("location_bg.mp4" if cat == "引流进店" else "cta_bg.mp4")
+                if bar_f.exists():
+                    fc = "black" if cat == "引流进店" else "white"
+                    overlays_to_add.append({
+                        "file": str(bar_f), "start": start_ts, "duration": min(dur, 2.5),
+                        "x": int((width - 700) / 2), "y": int(height * 0.75),
+                        "text": text, "font_size": 44, "font_color": fc,
+                    })
+
+            for ov in overlays_to_add:
+                if os.path.exists(ov["file"]):
+                    overlays.append(ov)
 
         accum += dur - (trans_dur if i < len(plan.segments_vfx) - 1 else 0)
 
