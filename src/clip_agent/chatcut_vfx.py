@@ -316,6 +316,10 @@ def build_vfx_plan(
         })
         accum_time = seg_end
 
+    # ── 节拍对齐: 段边界靠近节拍→切点吸附+转场类型调整 ──
+    if beats:
+        _align_to_beats(seg_vfx_list, beats, style.get("transition", "crossfade"))
+
     # ── 全局滤镜(最终调色) ──
     global_vf = _build_global_color_filter(style["global_color"], tweak)
 
@@ -434,19 +438,30 @@ def render_with_vfx(
             for ts in temp_segs:
                 cmd.extend(["-i", ts])
 
-            # 构建xfade链: [0][1]xfade=...[x1];[x1][2]xfade=...[x2];...
+            # 构建xfade链: 每段按transition类型决定xfade参数
             accum = 0.0
             filter_parts = []
             prev_label = "0"
 
             for i in range(len(temp_segs) - 1):
                 dur_this = vfx_plan.segments_vfx[i].get("duration", 2.0) if i < len(vfx_plan.segments_vfx) else 2.0
-                offset = accum + dur_this - trans_dur
-                accum += dur_this - trans_dur  # xfade会重叠trans_dur
+                seg_trans = vfx_plan.segments_vfx[i].get("transition", "fade") if i < len(vfx_plan.segments_vfx) else "fade"
+
+                # 节拍硬切→极短xfade(0.05s), 普通→标准0.3s
+                if seg_trans == "cut":
+                    t_dur = 0.05
+                else:
+                    t_dur = trans_dur
+
+                offset = accum + dur_this - t_dur
+                accum += dur_this - t_dur
                 next_label = f"x{i}" if i < len(temp_segs) - 2 else "v"
+
+                # cut用fadeblack(更快更干净)
+                t_type = "fadeblack" if seg_trans == "cut" else trans_type
                 filter_parts.append(
-                    f"[{prev_label}][{i+1}]xfade=transition={trans_type}:"
-                    f"duration={trans_dur}:offset={offset:.2f}[{next_label}]"
+                    f"[{prev_label}][{i+1}]xfade=transition={t_type}:"
+                    f"duration={t_dur}:offset={offset:.2f}[{next_label}]"
                 )
                 prev_label = next_label
 
@@ -985,6 +1000,39 @@ def _build_global_color_filter(color_name: str, tweak: dict) -> str:
     if vf == "copy":
         return ""
     return f"[0]{vf}[v]"
+
+
+def _align_to_beats(segments: list, beats: list, default_transition: str):
+    """节拍对齐: 段边界靠近节拍→吸附切点+强拍硬切"""
+    BEAT_SNAP_MS = 0.1  # 100ms内吸附
+
+    accum = 0.0
+    for i, seg in enumerate(segments):
+        dur = seg.get("duration", 2.0)
+        boundary = accum + dur
+
+        # 找最近的节拍
+        nearest = None
+        nearest_dist = float("inf")
+        for b in beats:
+            dist = abs(b.time_seconds - boundary)
+            if dist < nearest_dist:
+                nearest_dist = dist
+                nearest = b
+
+        # 100ms内→吸附到节拍
+        if nearest and nearest_dist < BEAT_SNAP_MS:
+            # 微调段时长对齐节拍(调整当前段, 不影响前面段)
+            adjusted_dur = nearest.time_seconds - accum
+            if adjusted_dur > 0.5:  # 至少保留0.5秒
+                seg["duration"] = round(adjusted_dur, 2)
+                # 强拍→硬切, 弱拍→fade
+                if nearest.is_downbeat:
+                    seg["transition"] = "cut"
+                else:
+                    seg["transition"] = default_transition
+
+        accum += seg.get("duration", dur)
 
 
 def _estimate_bpm(beats: list) -> float:
