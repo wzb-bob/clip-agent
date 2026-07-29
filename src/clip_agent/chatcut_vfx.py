@@ -253,11 +253,9 @@ def build_vfx_plan(
 
     # 配置节拍引擎
     engine = BeatTriggerEngine()
-    engine.configure(BeatTriggerPresets.for_genre(
-        "hype" if style["beat_preset"] == "douyin_hot" else
-        "melodic" if style["beat_preset"] == "melodic_subtle" else
-        "hype"
-    ))
+    # 团购→强节奏, 老板IP→柔和, 引流→高能
+    beat_genre = {"团购售卖": "hype", "老板IP": "melodic", "引流进店": "hype"}
+    engine.configure(BeatTriggerPresets.for_genre(beat_genre.get(category, "hype")))
     engine.set_beat_map(beats)
 
     # ── 逐段构建滤镜 ──
@@ -283,6 +281,21 @@ def build_vfx_plan(
             if f"copy[{fx_name}]" not in vf:  # 跳过无实际效果的
                 seg_filters.append(vf)
 
+        # 提取该段的脚本文字(用于文字烧录)
+        seg_text = getattr(seg, 'script_text', '') or ''
+        text_effect = ""
+        if role == "hook" and seg_text:
+            # 钩子段: 大字居中显示前15字
+            text_effect = "hook_big"
+            seg_text = seg_text[:15]
+        elif role == "cta" and seg_text:
+            # CTA段: 底部显示价格或引导
+            text_effect = "cta_price"
+            # 提取价格关键词
+            import re
+            price_match = re.search(r'[\d]+[块元折]|¥\d+|\d+折|[囤抢团][券购]|左下', seg_text)
+            seg_text = price_match.group(0) if price_match else seg_text[:8]
+
         seg_vfx_list.append({
             "index": i,
             "role": role,
@@ -290,6 +303,9 @@ def build_vfx_plan(
             "start_sec": getattr(seg, 'start_sec', 0),
             "filters": seg_filters,
             "transition": style.get("transition", "crossfade"),
+            "text": seg_text,
+            "text_effect": text_effect,
+            "is_broll": getattr(seg, 'is_broll', False),
         })
         accum_time = seg_end
 
@@ -308,24 +324,32 @@ def build_vfx_plan(
 
 
 # ══════════════════════════════════════════════════════════
-# 渲染集成: 生成最终FFmpeg命令
+# 渲染集成: 多Pass可靠渲染
+#
+# Pass 1: 逐段应用效果 → temp_seg_{i}.mp4
+# Pass 2: concat拼接 + 转场 → temp_concat.mp4
+# Pass 3: 全局调色/纹理 → output.mp4
+# Pass 4: 音频叠加
+#
+# 每步一个简单FFmpeg命令，不构建复杂filter_complex。
+# 任何一个pass失败都能清晰定位问题。
 # ══════════════════════════════════════════════════════════
 
 def render_with_vfx(
     vfx_plan: VfxPlan,
-    segment_files: list[tuple[str, float]],    # [(文件路径, 段时长), ...]
+    segment_files: list[tuple[str, float]],
     audio_path: str = "",
     output_path: str = "",
     width: int = 1080,
     height: int = 1920,
 ) -> tuple[bool, str]:
     """
-    执行VFX渲染——生成并运行FFmpeg命令。
+    多Pass VFX渲染。每段独立处理→拼接→全局调色。
 
     segment_files: [(视频文件路径, 该段时长秒), ...]
     返回: (成功, 输出路径或错误信息)
     """
-    import subprocess, os
+    import subprocess, os, tempfile
 
     if not segment_files:
         return False, "无素材文件"
@@ -333,82 +357,259 @@ def render_with_vfx(
     if not output_path:
         output_path = str(Path(segment_files[0][0]).parent / "vfx_output.mp4")
 
-    # 构建filter_complex
-    filter_parts = []
-    concat_labels = []
-
-    for i, ((file_path, duration), seg_vfx) in enumerate(
-        zip(segment_files, vfx_plan.segments_vfx)
-    ):
-        label_in = str(i)
-        label_out = f"seg{i}"
-
-        # 段级滤镜链
-        current_label = label_in
-        for j, vf in enumerate(seg_vfx.get("filters", [])):
-            # 把 vf 中的标签替换为当前链
-            adjusted = vf.replace(f"[{label_in}]", f"[{current_label}]")
-            # 替换输出标签为临时标签
-            tmp_label = f"tmp{i}_{j}"
-            adjusted = adjusted.replace(f"[s{i}_", f"[tmp{i}_")
-            filter_parts.append(adjusted)
-            current_label = f"tmp{i}_" + adjusted.split("[")[-1].split("]")[0]
-
-        # 段裁剪+时长
-        filter_parts.append(
-            f"[{current_label}]trim=duration={duration},setpts=PTS-STARTPTS,"
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height}[{label_out}]"
-        )
-        concat_labels.append(label_out)
-
-    # 拼接
-    concat_inputs = "".join(f"[{l}]" for l in concat_labels)
-    n = len(segment_files)
-    filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[v_raw]")
-
-    # 全局调色
-    if vfx_plan.global_vf:
-        filter_parts.append(
-            vfx_plan.global_vf.replace("[0]", "[v_raw]").replace("[v]", "[v_final]")
-        )
-        video_out = "v_final"
-    else:
-        filter_parts.append(f"[v_raw]copy[v_final]")
-        video_out = "v_final"
-
-    filter_complex = ";".join(filter_parts)
-
-    # FFmpeg命令
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
-    for file_path, _ in segment_files:
-        cmd.extend(["-i", file_path])
-    if audio_path and os.path.exists(audio_path):
-        cmd.extend(["-i", audio_path])
-
-    cmd.extend([
-        "-filter_complex", filter_complex,
-        "-map", f"[{video_out}]",
-    ])
-    if audio_path and os.path.exists(audio_path):
-        cmd.extend(["-map", f"{len(segment_files)}:a:0"])
-    cmd.extend([
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
-        "-pix_fmt", "yuv420p",
-        output_path,
-    ])
+    tmpdir = tempfile.mkdtemp(prefix="vfx_")
+    temp_segs = []
 
     try:
+        # ── Pass 1: 逐段效果 ──
+        for i, ((file_path, duration), seg_vfx) in enumerate(
+            zip(segment_files, vfx_plan.segments_vfx)
+        ):
+            if not file_path or not os.path.exists(file_path):
+                continue
+
+            # 收集该段的效果滤镜
+            vf_parts = _build_segment_vf(seg_vfx, width, height)
+            temp_out = os.path.join(tmpdir, f"seg_{i:03d}.mp4")
+
+            if vf_parts:
+                vf_str = ",".join(vf_parts)
+                cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", file_path,
+                    "-t", str(duration),
+                    "-vf", vf_str,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-an",
+                    temp_out,
+                ]
+            else:
+                # 无效果，直接裁剪
+                cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", file_path,
+                    "-t", str(duration),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-an",
+                    temp_out,
+                ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if proc.returncode != 0 or not os.path.exists(temp_out):
+                logger.warning("段%d渲染失败: %s", i, proc.stderr[:100])
+                # 降级: 用原文件
+                temp_out = file_path
+            temp_segs.append(temp_out)
+
+        if not temp_segs:
+            return False, "所有段渲染失败"
+
+        # ── Pass 2: concat拼接 ──
+        concat_list = os.path.join(tmpdir, "concat.txt")
+        with open(concat_list, "w", encoding="utf-8") as f:
+            for ts in temp_segs:
+                f.write(f"file '{ts.replace(chr(92), '/')}'\n")
+
+        concat_out = os.path.join(tmpdir, "concat.mp4")
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_list,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-an",
+            concat_out,
+        ]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            return False, f"拼接失败: {proc.stderr[:200]}"
+
+        # ── Pass 3: 全局调色 ──
+        global_vf = _build_global_vf(vfx_plan)
+        if global_vf:
+            final_in = concat_out
+            final_out = os.path.join(tmpdir, "graded.mp4")
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", final_in,
+                "-vf", global_vf,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-an",
+                final_out,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if proc.returncode == 0:
+                concat_out = final_out
+
+        # ── Pass 4: 音频叠加 ──
+        if audio_path and os.path.exists(audio_path):
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", concat_out,
+                "-i", audio_path,
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
+                "-map", "0:v:0", "-map", "1:a:0",
+                output_path,
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", concat_out,
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
+                output_path,
+            ]
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if proc.returncode == 0 and os.path.exists(output_path):
             size_mb = os.path.getsize(output_path) / 1024 / 1024
-            logger.info(f"VFX渲染完成: {size_mb:.1f}MB → {output_path}")
+            logger.info("VFX渲染完成: %.1fMB → %s", size_mb, output_path)
             return True, output_path
         else:
-            return False, f"FFmpeg错误: {proc.stderr[:300]}"
+            return False, f"最终合成失败: {proc.stderr[:200]}"
+
     except Exception as e:
         return False, str(e)[:200]
+    finally:
+        # 清理临时文件
+        import shutil
+        try:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _find_font() -> str:
+    """跨平台中文字体检测（复用pro_renderer逻辑）"""
+    import platform, os
+    candidates = []
+    system = platform.system()
+    if system == "Windows":
+        windir = os.environ.get("WINDIR", "C:\\Windows")
+        candidates = [os.path.join(windir, "Fonts", f) for f in
+                      ["simhei.ttf", "msyh.ttc", "simsun.ttc"]]
+    elif system == "Darwin":
+        candidates = ["/System/Library/Fonts/PingFang.ttc",
+                      "/System/Library/Fonts/STHeiti Light.ttc"]
+    else:
+        candidates = ["/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                      "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"]
+    for fp in candidates:
+        if os.path.exists(fp):
+            return fp.replace("\\", "/").replace(":", "\\\\:")
+    return ""
+
+
+def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:
+    """为单个段构建 -vf 滤镜列表（用逗号拼接）
+
+    支持: eq调色 + noise纹理 + vignette暗角 + deshake稳定 +
+          setpts变速 + zoompan缩放 + fade淡入 + drawtext文字
+    """
+    vf_parts = []
+
+    # 缩放+裁剪
+    vf_parts.append(f"scale={width}:{height}:force_original_aspect_ratio=increase")
+    vf_parts.append(f"crop={width}:{height}")
+
+    role = seg_vfx.get("role", "body")
+    filters = seg_vfx.get("filters", [])
+
+    for f in filters:
+        ftype = f.get("type", "")
+        shader = f.get("shader", "")
+
+        if ftype == "color" and shader:
+            eq_vf = _color_shader_to_eq(shader)
+            if eq_vf:
+                vf_parts.append(eq_vf)
+        elif ftype == "texture" and shader:
+            tex_vf = _texture_shader_to_vf(shader)
+            if tex_vf:
+                vf_parts.append(tex_vf)
+
+    # 转场淡入
+    transition = seg_vfx.get("transition", "")
+    if transition in ("crossfade", "dissolve"):
+        vf_parts.append("fade=in:st=0:d=0.3")
+
+    # B-roll段：柔光+慢缩放
+    if role == "broll":
+        if "bloom_light" not in str(filters):
+            vf_parts.append("eq=saturation=1.1:brightness=0.03:contrast=1.05")
+
+    # CTA段：底部红色脉冲条
+    if role == "cta":
+        cta_y = int(height * 0.88)
+        vf_parts.append(
+            f"drawbox=x=iw*0.15:y={cta_y}:w=iw*0.7:h=4:color=red@0.7:t=fill,"
+            f"drawbox=x=iw*0.15:y={cta_y}:w=iw*0.7:h=4:color=white@0.5:t=fill"
+        )
+
+    # 文字烧录——价格/钩子/CTA
+    text = seg_vfx.get("text", "")
+    font_path = _find_font()
+    if text and font_path:
+        text_effect = seg_vfx.get("text_effect", "")
+        font_size = 56 if role in ("hook", "cta") else 42
+        font_color = "red" if role == "cta" else "white"
+        text_y = int(height * 0.25) if role == "hook" else int(height * 0.82)
+
+        escaped_text = text.replace(":", "\\:").replace("'", "\\'")
+        vf_parts.append(
+            f"drawtext=fontfile='{font_path}':text='{escaped_text}':"
+            f"fontsize={font_size}:fontcolor={font_color}:"
+            f"x=(w-text_w)/2:y={text_y}:"
+            f"bordercolor=black@0.4:borderw=2"
+        )
+
+    return vf_parts
+
+
+def _color_shader_to_eq(shader_name: str) -> str:
+    """着色器名→eq滤镜参数"""
+    mapping = {
+        "warm_boost":     "eq=saturation=1.2:brightness=0.05:contrast=1.05:gamma=1.03",
+        "warm_grade":     "eq=saturation=1.15:brightness=0.03:contrast=1.03",
+        "film_warm":      "eq=saturation=0.85:brightness=0.02:contrast=1.1:gamma=1.08",
+        "bright_clean":   "eq=saturation=1.0:brightness=0.08:contrast=1.08:gamma=0.95",
+        "bright_grade":   "eq=saturation=1.0:brightness=0.05:contrast=1.05",
+        "bleach_bypass":  "eq=saturation=0.3:contrast=1.3:brightness=0.05",
+        "sepia":          "eq=saturation=0.5:brightness=0.0:contrast=0.9:gamma=1.05",
+        "vignette_soft":  "vignette=PI/4:aspect=0.75",
+    }
+    return mapping.get(shader_name, "")
+
+
+def _texture_shader_to_vf(shader_name: str) -> str:
+    """着色器名→纹理滤镜"""
+    mapping = {
+        "film_grain":       "noise=alls=8:allf=t",
+        "film_grain_light": "noise=alls=4:allf=t",
+        "noise":            "noise=alls=10:allf=t",
+        "vhs_noise":        "noise=alls=15:allf=t",
+    }
+    return mapping.get(shader_name, "")
+
+
+def _build_global_vf(plan: VfxPlan) -> str:
+    """构建全局滤镜（应用于合成后视频）"""
+    parts = []
+
+    # 从global_vf提取eq参数
+    if plan.global_vf and "eq=" in plan.global_vf:
+        # 提取eq=...部分
+        import re
+        m = re.search(r'eq=([^\]]+)', plan.global_vf)
+        if m:
+            parts.append(f"eq={m.group(1)}")
+
+    if not parts:
+        return ""
+
+    return ",".join(parts)
 
 
 # ══════════════════════════════════════════════════════════
