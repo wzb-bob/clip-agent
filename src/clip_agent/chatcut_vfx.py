@@ -972,21 +972,32 @@ def _srt_to_drawtext(srt_path: str, font_path: str, width: int, height: int) -> 
 
 
 def _build_global_vf(plan: VfxPlan) -> str:
-    """构建全局滤镜（应用于合成后视频）"""
-    parts = []
+    """构建全局滤镜（colorchannelmixer矩阵优先→eq降级）"""
+    try:
+        from .vfx.color_matrix import COLOR_MATRIX_PRESETS
 
-    # 从global_vf提取eq参数
+        # 类别→矩阵预设映射
+        matrix_map = {
+            "团购售卖": "vivid_pop",
+            "老板IP": "film_warm",
+            "引流进店": "clean_bright",
+        }
+        preset_key = matrix_map.get(plan.category, "vivid_pop")
+        matrix_vf = COLOR_MATRIX_PRESETS.get(preset_key, "")
+
+        if matrix_vf and not matrix_vf.startswith("colorchannelmixer=0"):
+            return matrix_vf  # 直接返回colorchannelmixer滤镜串
+    except ImportError:
+        pass
+
+    # 降级: 使用eq
     if plan.global_vf and "eq=" in plan.global_vf:
-        # 提取eq=...部分
         import re
         m = re.search(r'eq=([^\]]+)', plan.global_vf)
         if m:
-            parts.append(f"eq={m.group(1)}")
+            return f"eq={m.group(1)}"
 
-    if not parts:
-        return ""
-
-    return ",".join(parts)
+    return ""
 
 
 # ══════════════════════════════════════════════════════════
