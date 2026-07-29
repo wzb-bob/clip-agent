@@ -476,7 +476,10 @@ def render_with_vfx(
         if proc.returncode != 0:
             return False, f"拼接失败: {proc.stderr[:200]}"
 
-        # ── Pass 2.5: 模板叠加 (预渲染动画→overlay到指定位置) ──
+        # ── Pass 2.2: B-roll画中画 ──
+        concat_out = _overlay_broll(concat_out, vfx_plan, segment_files, tmpdir, width, height)
+
+        # ── Pass 2.5: 模板叠加 ──
         concat_out = _overlay_templates(concat_out, vfx_plan, tmpdir, width, height)
 
         # ── Pass 3: 全局调色 ──
@@ -717,12 +720,83 @@ def _xfade_for_category(category: str) -> str:
     return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft"}.get(category, "fade")
 
 
+def _overlay_broll(video_path: str, plan: VfxPlan,
+                    segment_files: list, tmpdir: str,
+                    width: int, height: int) -> str:
+    """B-roll画中画: 有独立素材的B-roll段overlay到口播上方"""
+    import subprocess
+
+    brolls = []
+    accum = 0.0
+    trans_dur = 0.3
+
+    for i, seg in enumerate(plan.segments_vfx or []):
+        dur = seg.get("duration", 2.0)
+        is_broll = seg.get("is_broll", False)
+        start_ts = accum
+
+        if is_broll and i < len(segment_files) and len(segment_files) > 1:
+            bf = segment_files[i][0]
+            main_file = segment_files[0][0]  # 口播主文件
+            # 只有B-roll素材不同于口播文件才叠加(避免自身叠加)
+            if bf and os.path.exists(bf) and bf != main_file:
+                brolls.append({
+                    "file": bf,
+                    "start": start_ts,
+                    "duration": dur,
+                    # 右上角小窗·占屏幕1/3
+                    "x": int(width * 0.65),
+                    "y": int(height * 0.08),
+                    "w": int(width * 0.33),
+                    "h": int(height * 0.19),
+                })
+
+        accum += dur - (trans_dur if i < len(plan.segments_vfx) - 1 else 0)
+
+    if not brolls:
+        return video_path
+
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-i", video_path]
+    for br in brolls:
+        cmd.extend(["-i", br["file"]])
+
+    filter_parts = []
+    current_label = "0"
+    for i, br in enumerate(brolls):
+        next_label = f"b{i}" if i < len(brolls) - 1 else "v"
+        br_start = br['start']; br_end = br['start'] + br['duration']
+        filter_parts.append(
+            f"[{i+1}]scale={br['w']}:{br['h']},"
+            f"fade=in:st=0:d=0.2[br{i}];"
+            f"[{current_label}][br{i}]overlay={br['x']}:{br['y']}:"
+            f"enable='between(t,{br_start},{br_end})'[{next_label}]"
+        )
+        current_label = next_label
+
+    out = os.path.join(tmpdir, "brolled.mp4")
+    cmd.extend([
+        "-filter_complex", ";".join(filter_parts),
+        "-map", f"[{current_label}]", "-map", "0:a:0?",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        out,
+    ])
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
+    if proc.returncode == 0 and os.path.exists(out):
+        return out
+    logger.debug("B-roll叠加跳过: %s", proc.stderr[:80])
+    return video_path
+
+
 def _overlay_templates(video_path: str, plan: VfxPlan,
                         tmpdir: str, width: int, height: int) -> str:
-    """在视频上叠加预渲染模板(价格弹出/CTA按钮等)"""
+    """叠加模板背景+动态drawtext文字(文字来自VFX plan,不硬编码)"""
     import subprocess
 
     templates_dir = Path(__file__).parent / "templates" / "overlays"
+    font_path = _find_font()
     overlays = []
 
     # 计算每段在concat后的时间戳
@@ -731,25 +805,36 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
     for i, seg in enumerate(plan.segments_vfx or []):
         dur = seg.get("duration", 2.0)
         role = seg.get("role", "")
+        text = seg.get("text", "")
         start_ts = accum
 
-        if role == "hook" or role == "cta":
+        if role in ("hook", "cta") and text:
             template_file = ""
+            font_size = 48
+            font_color = "white"
+            y_pos = int(height * 0.82)
+
             if role == "cta":
-                template_file = templates_dir / "cta_button.mp4"
+                template_file = templates_dir / "cta_bg.mp4"
+                y_pos = int(height * 0.78)
+                font_size = 44
             elif role == "hook":
-                template_file = templates_dir / "price_popup.mp4"
+                template_file = templates_dir / "price_bg.mp4"
+                y_pos = int(height * 0.18)
+                font_size = 56
+                font_color = "white"
 
             if template_file.exists():
-                # CTA模板放底部, 钩子模板放中上
-                y_pos = int(height * 0.75) if role == "cta" else int(height * 0.15)
-                x_pos = int((width - 600) / 2)  # 居中
                 overlays.append({
                     "file": str(template_file),
                     "start": start_ts,
-                    "duration": min(dur, 3.0),
-                    "x": x_pos,
+                    "duration": min(dur, 2.5),
+                    "x": int((width - 800) / 2),
                     "y": y_pos,
+                    "text": text,
+                    "font_size": font_size,
+                    "font_color": font_color,
+                    "text_y_offset": 50,  # drawtext在模板上方
                 })
 
         accum += dur - (trans_dur if i < len(plan.segments_vfx) - 1 else 0)
@@ -757,7 +842,7 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
     if not overlays:
         return video_path
 
-    # 构建overlay滤镜链
+    # 构建overlay+drawtext滤镜链
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
            "-i", video_path]
     for ov in overlays:
@@ -766,19 +851,34 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
     filter_parts = []
     current_label = "0"
     for i, ov in enumerate(overlays):
-        next_label = f"ov{i}" if i < len(overlays) - 1 else "v"
-        ov_x = ov['x']; ov_y = ov['y']
+        next_label = f"t{i}" if i < len(overlays) - 1 else "v"
         ov_start = ov['start']; ov_end = ov['start'] + ov['duration']
+        ov_x = ov['x']; ov_y = ov['y']
+
+        # 叠加模板背景
         filter_parts.append(
             f"[{current_label}][{i+1}]overlay={ov_x}:{ov_y}:"
             f"enable='between(t,{ov_start},{ov_end})'[{next_label}]"
         )
         current_label = next_label
 
+        # 在模板上方叠加动态文字(drawtext)
+        if font_path and ov.get("text"):
+            escaped = ov['text'].replace(":", "\\:").replace("'", "\\'")
+            txt_y = ov['y'] - ov.get('text_y_offset', 50) if ov['y'] > height // 2 else ov['y'] + 180
+            next_with_text = f"tw{i}" if i < len(overlays) - 1 else "v"
+            filter_parts.append(
+                f"[{current_label}]drawtext=fontfile='{font_path}':"
+                f"text='{escaped}':fontsize={ov['font_size']}:fontcolor={ov['font_color']}:"
+                f"x=(w-text_w)/2:y={txt_y}:bordercolor=black@0.5:borderw=2:"
+                f"enable='between(t,{ov_start},{ov_end})'[{next_with_text}]"
+            )
+            current_label = next_with_text
+
     out = os.path.join(tmpdir, "templated.mp4")
     cmd.extend([
         "-filter_complex", ";".join(filter_parts),
-        "-map", "[v]", "-map", "0:a:0?",
+        "-map", f"[{current_label}]", "-map", "0:a:0?",
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest",
