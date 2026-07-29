@@ -114,6 +114,30 @@ MATERIAL_HINTS = {
 }
 
 
+def _generate_simple_draft(sentences, output_dir: str = "") -> str:
+    """简化草稿: JSON描述文件(独立仓库模式·不依赖剪映SDK)"""
+    import json
+    draft = {
+        "version": "1.0",
+        "sentences": [],
+        "total_duration": sum(s.duration_sec for s in sentences),
+    }
+    for s in sentences:
+        draft["sentences"].append({
+            "text": s.text_overlay or "",
+            "start": s.start_sec,
+            "duration": s.duration_sec,
+            "broll": s.is_broll,
+            "audio": s.audio_file if s.audio_status == "uploaded" else "",
+            "video": s.video_file if s.video_status == "uploaded" else "",
+        })
+    out = os.path.join(output_dir or ".", "draft.json")
+    os.makedirs(output_dir or ".", exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(draft, f, ensure_ascii=False, indent=2)
+    return out
+
+
 def generate_jianying_from_sentences(
     sentences: list[ScriptSentence],
     output_dir: str = "",
@@ -126,9 +150,12 @@ def generate_jianying_from_sentences(
     - B槽有文件(视频/图片): 放主视频轨(画面)
     - A+B都有: B的画面+A的音频=B-roll覆盖效果!
     """
-    from app.services.jianying_draft import JianYingDraftGenerator
-
-    gen = JianYingDraftGenerator(width=1080, height=1920, fps=30)
+    try:
+        from app.services.jianying_draft import JianYingDraftGenerator
+        gen = JianYingDraftGenerator(width=1080, height=1920, fps=30)
+    except ImportError:
+        logger.warning("jianying_draft不可用(独立仓库模式), 使用简化草稿")
+        return _generate_simple_draft(sentences, output_dir)
 
     for s in sentences:
         dur_us = int(s.duration_sec * 1_000_000)

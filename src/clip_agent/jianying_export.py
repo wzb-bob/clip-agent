@@ -14,6 +14,8 @@ def export_to_jianying_draft(plan, material_paths, output_dir=""):
     if plan.exported_video and os.path.exists(plan.exported_video): return ExportResult(True,"mp4_video",plan.exported_video,plan.exported_video)
     try:
         from app.services.jianying_draft import create_jianying_draft
+    except ImportError:
+        return ExportResult(False, "jianying_draft_unavailable", "", "", error="jianying_draft模块不可用(独立仓库模式)")
         mv=""
         for mp in material_paths:
             if mp.lower().endswith(('.mp4','.mov')) and os.path.exists(mp): mv=mp; break
