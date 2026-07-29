@@ -401,16 +401,17 @@ def render_with_vfx(
                     "-i", file_path,
                     "-t", str(duration),
                     "-vf", vf_str,
+                    "-r", "30", "-video_track_timescale", "90000",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
                     "-an",
                     temp_out,
                 ]
             else:
-                # 无效果，直接裁剪
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", file_path,
                     "-t", str(duration),
+                    "-r", "30", "-video_track_timescale", "90000",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
                     "-an",
                     temp_out,
@@ -633,9 +634,10 @@ def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:
     """
     vf_parts = []
 
-    # 缩放+裁剪
+    # 缩放+裁剪+统一fps+timebase (xfade要求所有输入timebase一致)
     vf_parts.append(f"scale={width}:{height}:force_original_aspect_ratio=increase")
     vf_parts.append(f"crop={width}:{height}")
+    vf_parts.append("fps=30,setpts=N/(30*TB),settb=AVTB")
 
     role = seg_vfx.get("role", "body")
     filters = seg_vfx.get("filters", [])
