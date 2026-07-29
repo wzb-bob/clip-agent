@@ -273,13 +273,20 @@ def build_vfx_plan(
         # 选择该角色的效果列表
         effect_names = style.get(f"{role}_effects", style.get("body_effects", []))
 
-        # 为每个效果生成FFmpeg滤镜
-        cur_label = str(i)  # 使用段索引作为输入标签
+        # 生成结构化效果描述(_build_segment_vf会把它们转为FFmpeg滤镜)
         seg_filters = []
         for fx_name in effect_names:
-            vf = _effect_to_ffmpeg(fx_name, cur_label, f"s{i}_{fx_name}")
-            if f"copy[{fx_name}]" not in vf:  # 跳过无实际效果的
-                seg_filters.append(vf)
+            # 判断效果类型: color(调色) vs texture(纹理) vs other
+            if fx_name in ("warm_boost","warm_grade","film_warm","bright_clean","bright_grade",
+                          "bleach_bypass","sepia","vignette_soft","cool_metal","vivid_pop"):
+                seg_filters.append({"type": "color", "shader": fx_name})
+            elif fx_name in ("film_grain","film_grain_light","noise","vhs_noise"):
+                seg_filters.append({"type": "texture", "shader": fx_name})
+            elif fx_name == "stabilize":
+                seg_filters.append({"type": "texture", "shader": fx_name})  # deshake
+            else:
+                # bloom_light, glow_warm, slow_zoom, crossfade_slow, speed_ramp, pulse_ring
+                seg_filters.append({"type": "color", "shader": fx_name})
 
         # 提取该段的脚本文字(用于文字烧录)
         seg_text = getattr(seg, 'script_text', '') or ''
@@ -575,10 +582,26 @@ def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:
         shader = f.get("shader", "")
 
         if ftype == "color" and shader:
+            if shader in ("bloom_light", "glow_warm"):
+                continue  # bloom/glow需要split→blur→blend, 不能用-vf
+            if shader == "slow_zoom":
+                vf_parts.append("zoompan=z='min(zoom+0.0008,1.03)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920")
+                continue
+            if shader == "speed_ramp":
+                vf_parts.append("setpts=0.8*PTS")
+                continue
+            if shader == "crossfade_slow":
+                vf_parts.append("fade=in:st=0:d=0.5")
+                continue
+            if shader == "pulse_ring":
+                continue  # drawbox在下面统一处理
             eq_vf = _color_shader_to_eq(shader)
             if eq_vf:
                 vf_parts.append(eq_vf)
         elif ftype == "texture" and shader:
+            if shader == "stabilize":
+                vf_parts.append("deshake")
+                continue
             tex_vf = _texture_shader_to_vf(shader)
             if tex_vf:
                 vf_parts.append(tex_vf)
@@ -590,8 +613,7 @@ def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:
 
     # B-roll段：柔光+慢缩放
     if role == "broll":
-        if "bloom_light" not in str(filters):
-            vf_parts.append("eq=saturation=1.1:brightness=0.03:contrast=1.05")
+        vf_parts.append("eq=saturation=1.1:brightness=0.03:contrast=1.05")
 
     # CTA段：底部红色脉冲条
     if role == "cta":
