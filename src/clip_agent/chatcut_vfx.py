@@ -10,7 +10,7 @@ ChatCut VFX 增强层 · 长益三类脚本专属剪辑风格
 但剪辑策略由脚本类别决定——这是跨行业的铁律。
 """
 from __future__ import annotations
-import logging
+import logging, os
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -476,6 +476,9 @@ def render_with_vfx(
         if proc.returncode != 0:
             return False, f"拼接失败: {proc.stderr[:200]}"
 
+        # ── Pass 2.5: 模板叠加 (预渲染动画→overlay到指定位置) ──
+        concat_out = _overlay_templates(concat_out, vfx_plan, tmpdir, width, height)
+
         # ── Pass 3: 全局调色 ──
         global_vf = _build_global_vf(vfx_plan)
         if global_vf:
@@ -510,24 +513,24 @@ def render_with_vfx(
             if proc.returncode == 0:
                 concat_out = with_audio
 
-        # ── Pass 5: 字幕烧录 (SRT→硬字幕) ──
+        # ── Pass 5: 字幕烧录 (解析SRT→drawtext逐句叠加, 避开subtitles滤镜Windows bug) ──
         if srt_path and os.path.exists(srt_path):
             font_path = _find_font()
             if font_path:
                 with_subs = os.path.join(tmpdir, "with_subs.mp4")
-                cmd = [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", concat_out,
-                    "-vf", f"subtitles='{srt_path}':force_style='FontFile={font_path},FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'",
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                    "-c:a", "copy",
-                    with_subs,
-                ]
-                proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
-                if proc.returncode == 0:
-                    concat_out = with_subs
-                else:
-                    logger.debug("字幕烧录跳过: %s", proc.stderr[:80])
+                drawtext_vf = _srt_to_drawtext(srt_path, font_path, width, height)
+                if drawtext_vf:
+                    cmd = [
+                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                        "-i", concat_out,
+                        "-vf", drawtext_vf,
+                        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                        "-c:a", "copy",
+                        with_subs,
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
+                    if proc.returncode == 0:
+                        concat_out = with_subs
 
         # ── Pass 6: BGM混音 ──
         if bgm_path and os.path.exists(bgm_path):
@@ -712,6 +715,126 @@ def _texture_shader_to_vf(shader_name: str) -> str:
 def _xfade_for_category(category: str) -> str:
     """脚本类别→xfade转场类型"""
     return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft"}.get(category, "fade")
+
+
+def _overlay_templates(video_path: str, plan: VfxPlan,
+                        tmpdir: str, width: int, height: int) -> str:
+    """在视频上叠加预渲染模板(价格弹出/CTA按钮等)"""
+    import subprocess
+
+    templates_dir = Path(__file__).parent / "templates" / "overlays"
+    overlays = []
+
+    # 计算每段在concat后的时间戳
+    accum = 0.0
+    trans_dur = 0.3
+    for i, seg in enumerate(plan.segments_vfx or []):
+        dur = seg.get("duration", 2.0)
+        role = seg.get("role", "")
+        start_ts = accum
+
+        if role == "hook" or role == "cta":
+            template_file = ""
+            if role == "cta":
+                template_file = templates_dir / "cta_button.mp4"
+            elif role == "hook":
+                template_file = templates_dir / "price_popup.mp4"
+
+            if template_file.exists():
+                # CTA模板放底部, 钩子模板放中上
+                y_pos = int(height * 0.75) if role == "cta" else int(height * 0.15)
+                x_pos = int((width - 600) / 2)  # 居中
+                overlays.append({
+                    "file": str(template_file),
+                    "start": start_ts,
+                    "duration": min(dur, 3.0),
+                    "x": x_pos,
+                    "y": y_pos,
+                })
+
+        accum += dur - (trans_dur if i < len(plan.segments_vfx) - 1 else 0)
+
+    if not overlays:
+        return video_path
+
+    # 构建overlay滤镜链
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-i", video_path]
+    for ov in overlays:
+        cmd.extend(["-i", ov["file"]])
+
+    filter_parts = []
+    current_label = "0"
+    for i, ov in enumerate(overlays):
+        next_label = f"ov{i}" if i < len(overlays) - 1 else "v"
+        ov_x = ov['x']; ov_y = ov['y']
+        ov_start = ov['start']; ov_end = ov['start'] + ov['duration']
+        filter_parts.append(
+            f"[{current_label}][{i+1}]overlay={ov_x}:{ov_y}:"
+            f"enable='between(t,{ov_start},{ov_end})'[{next_label}]"
+        )
+        current_label = next_label
+
+    out = os.path.join(tmpdir, "templated.mp4")
+    cmd.extend([
+        "-filter_complex", ";".join(filter_parts),
+        "-map", "[v]", "-map", "0:a:0?",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        out,
+    ])
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=120)
+    if proc.returncode == 0 and os.path.exists(out):
+        return out
+    logger.debug("模板叠加跳过: %s", proc.stderr[:80])
+    return video_path
+
+
+def _srt_to_drawtext(srt_path: str, font_path: str, width: int, height: int) -> str:
+    """解析SRT→drawtext滤镜链(避开subtitles/ass滤镜的Windows路径bug)"""
+    import re
+    try:
+        with open(srt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception:
+        return ""
+
+    # 解析SRT: 序号\n时间范围\n文本\n\n
+    entries = []
+    blocks = content.strip().split("\n\n")
+    for block in blocks:
+        lines = block.strip().split("\n")
+        if len(lines) < 2:
+            continue
+        time_match = re.match(r"(\d+):(\d+):(\d+)[.,](\d+)\s*-->\s*(\d+):(\d+):(\d+)[.,](\d+)", lines[1])
+        if not time_match:
+            continue
+        start_sec = (int(time_match.group(1))*3600 + int(time_match.group(2))*60 +
+                     int(time_match.group(3)) + int(time_match.group(4))/1000)
+        end_sec = (int(time_match.group(5))*3600 + int(time_match.group(6))*60 +
+                   int(time_match.group(7)) + int(time_match.group(8))/1000)
+        text = " ".join(lines[2:]).replace(":", "\\:").replace("'", "\\'")
+        if text:
+            entries.append({"start": start_sec, "end": end_sec, "text": text})
+
+    if not entries:
+        return ""
+
+    # 为每条字幕生成drawtext(底部居中·白字黑边)
+    parts = []
+    font_esc = font_path.replace("\\", "/").replace(":", "\\:")
+    for i, e in enumerate(entries[:20]):  # 最多20条
+        parts.append(
+            f"drawtext=fontfile='{font_esc}':text='{e['text']}':"
+            f"fontsize=20:fontcolor=white@0.95:"
+            f"x=(w-text_w)/2:y=h*0.82:"
+            f"bordercolor=black@0.5:borderw=2:"
+            f"enable='between(t,{e['start']},{e['end']})'"
+        )
+
+    return ",".join(parts)
 
 
 def _build_global_vf(plan: VfxPlan) -> str:
