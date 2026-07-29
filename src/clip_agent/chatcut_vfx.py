@@ -422,21 +422,56 @@ def render_with_vfx(
         if not temp_segs:
             return False, "所有段渲染失败"
 
-        # ── Pass 2: concat拼接 ──
-        concat_list = os.path.join(tmpdir, "concat.txt")
-        with open(concat_list, "w", encoding="utf-8") as f:
-            for ts in temp_segs:
-                f.write(f"file '{ts.replace(chr(92), '/')}'\n")
-
+        # ── Pass 2: xfade转场拼接 ──
         concat_out = os.path.join(tmpdir, "concat.mp4")
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "concat", "-safe", "0",
-            "-i", concat_list,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-an",
-            concat_out,
-        ]
+
+        if len(temp_segs) > 1 and vfx_plan.segments_vfx:
+            # 使用xfade滤镜链(带转场效果)
+            trans_type = _xfade_for_category(vfx_plan.category)
+            trans_dur = 0.3
+
+            cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+            for ts in temp_segs:
+                cmd.extend(["-i", ts])
+
+            # 构建xfade链: [0][1]xfade=...[x1];[x1][2]xfade=...[x2];...
+            accum = 0.0
+            filter_parts = []
+            prev_label = "0"
+
+            for i in range(len(temp_segs) - 1):
+                dur_this = vfx_plan.segments_vfx[i].get("duration", 2.0) if i < len(vfx_plan.segments_vfx) else 2.0
+                offset = accum + dur_this - trans_dur
+                accum += dur_this - trans_dur  # xfade会重叠trans_dur
+                next_label = f"x{i}" if i < len(temp_segs) - 2 else "v"
+                filter_parts.append(
+                    f"[{prev_label}][{i+1}]xfade=transition={trans_type}:"
+                    f"duration={trans_dur}:offset={offset:.2f}[{next_label}]"
+                )
+                prev_label = next_label
+
+            cmd.extend([
+                "-filter_complex", ";".join(filter_parts),
+                "-map", "[v]",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-an",
+                concat_out,
+            ])
+        else:
+            # 单段或无VFX计划→直接concat demuxer
+            concat_list = os.path.join(tmpdir, "concat.txt")
+            with open(concat_list, "w", encoding="utf-8") as f:
+                for ts in temp_segs:
+                    f.write(f"file '{ts.replace(chr(92), '/')}'\n")
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "concat", "-safe", "0",
+                "-i", concat_list,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-an",
+                concat_out,
+            ]
+
         proc = subprocess.run(cmd, capture_output=True, text=True, env=_FFMPEG_ENV, timeout=300)
         if proc.returncode != 0:
             return False, f"拼接失败: {proc.stderr[:200]}"
@@ -672,6 +707,11 @@ def _texture_shader_to_vf(shader_name: str) -> str:
         "vhs_noise":        "noise=alls=15:allf=t",
     }
     return mapping.get(shader_name, "")
+
+
+def _xfade_for_category(category: str) -> str:
+    """脚本类别→xfade转场类型"""
+    return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft"}.get(category, "fade")
 
 
 def _build_global_vf(plan: VfxPlan) -> str:
