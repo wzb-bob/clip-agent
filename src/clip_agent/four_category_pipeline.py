@@ -163,9 +163,9 @@ def run_four_category_pipeline(
             from .jianying_timeline_builder import validate_draft
             validation = validate_draft(draft_path)
             if not validation.get("valid"):
-                logger.warning("草稿验证: %s", validation.get("issues", []))
+                logger.debug("草稿验证: %s", validation.get("issues", []))
             else:
-                logger.info("草稿验证: ✅ %d段·v%s", validation.get("segments", 0), validation.get("version", "?"))
+                logger.debug("草稿验证: ✅ %d段·v%s", validation.get("segments", 0), validation.get("version", "?"))
         except Exception:
             pass
 
