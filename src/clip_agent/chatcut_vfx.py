@@ -828,16 +828,24 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
             font_size = 48
             font_color = "white"
             y_pos = int(height * 0.82)
+            cat = plan.category
 
             if role == "cta":
-                template_file = templates_dir / "cta_bg.mp4"
+                if cat == "引流进店":
+                    template_file = templates_dir / "location_bg.mp4"
+                    font_color = "black"
+                else:
+                    template_file = templates_dir / "cta_bg.mp4"
                 y_pos = int(height * 0.78)
                 font_size = 44
             elif role == "hook":
-                template_file = templates_dir / "price_bg.mp4"
+                if cat == "引流进店":
+                    template_file = templates_dir / "flash_bg.mp4"
+                    font_color = "black"
+                else:
+                    template_file = templates_dir / "price_bg.mp4"
                 y_pos = int(height * 0.18)
                 font_size = 56
-                font_color = "white"
 
             if template_file.exists():
                 overlays.append({
