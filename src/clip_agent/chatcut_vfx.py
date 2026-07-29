@@ -342,11 +342,17 @@ def render_with_vfx(
     output_path: str = "",
     width: int = 1080,
     height: int = 1920,
+    *,
+    srt_path: str = "",
+    bgm_path: str = "",
+    bgm_volume: float = 0.3,
 ) -> tuple[bool, str]:
     """
-    多Pass VFX渲染。每段独立处理→拼接→全局调色。
+    多Pass VFX渲染。每段独立处理→拼接→全局调色→字幕→BGM。
 
     segment_files: [(视频文件路径, 该段时长秒), ...]
+    srt_path: SRT字幕文件(可选, 烧录到视频)
+    bgm_path: 背景音乐(可选, 混音)
     返回: (成功, 输出路径或错误信息)
     """
     import subprocess, os, tempfile
@@ -441,6 +447,7 @@ def render_with_vfx(
                 concat_out = final_out
 
         # ── Pass 4: 音频叠加 ──
+        with_audio = os.path.join(tmpdir, "with_audio.mp4")
         if audio_path and os.path.exists(audio_path):
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -450,18 +457,60 @@ def render_with_vfx(
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest",
                 "-map", "0:v:0", "-map", "1:a:0",
-                output_path,
+                with_audio,
             ]
-        else:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if proc.returncode == 0:
+                concat_out = with_audio
+
+        # ── Pass 5: 字幕烧录 (SRT→硬字幕) ──
+        if srt_path and os.path.exists(srt_path):
+            font_path = _find_font()
+            if font_path:
+                with_subs = os.path.join(tmpdir, "with_subs.mp4")
+                cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", concat_out,
+                    "-vf", f"subtitles='{srt_path}':force_style='FontFile={font_path},FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=40'",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                    "-c:a", "copy",
+                    with_subs,
+                ]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if proc.returncode == 0:
+                    concat_out = with_subs
+                else:
+                    logger.debug("字幕烧录跳过: %s", proc.stderr[:80])
+
+        # ── Pass 6: BGM混音 ──
+        if bgm_path and os.path.exists(bgm_path):
+            with_bgm = os.path.join(tmpdir, "with_bgm.mp4")
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", concat_out,
+                "-i", bgm_path,
+                "-filter_complex",
+                f"[1:a]volume={bgm_volume},aloop=loop=-1:size=2e+09[bgm];"
+                f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[amix]",
+                "-map", "0:v:0", "-map", "[amix]",
                 "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest",
-                output_path,
+                with_bgm,
             ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if proc.returncode == 0:
+                concat_out = with_bgm
 
+        # ── 最终输出 ──
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", concat_out,
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            "-shortest",
+            output_path,
+        ]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if proc.returncode == 0 and os.path.exists(output_path):
             size_mb = os.path.getsize(output_path) / 1024 / 1024
@@ -482,7 +531,10 @@ def render_with_vfx(
 
 
 def _find_font() -> str:
-    """跨平台中文字体检测（复用pro_renderer逻辑）"""
+    """跨平台中文字体检测（复用pro_renderer逻辑）
+
+    返回FFmpeg安全路径: 反斜杠转正斜杠, 盘符冒号转义(C: → C\\:)
+    """
     import platform, os
     candidates = []
     system = platform.system()
@@ -498,7 +550,8 @@ def _find_font() -> str:
                       "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"]
     for fp in candidates:
         if os.path.exists(fp):
-            return fp.replace("\\", "/").replace(":", "\\\\:")
+            # Windows: C:/Windows/Fonts/simhei.ttf → C\:/Windows/Fonts/simhei.ttf
+            return fp.replace("\\", "/").replace(":", "\\:")
     return ""
 
 
