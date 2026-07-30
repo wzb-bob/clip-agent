@@ -1,41 +1,86 @@
 {
-  "last_updated": "2026-07-31T01:16:48",
-  "total_frames": 4,
   "categories": {
-    "团购售卖": {
-      "price_position": "0.09",
-      "cta_position": "0.82",
-      "price_font_size": 63,
-      "saturation_boost": 0.13,
-      "warmth_boost": 0.02,
-      "broll_insert_rate": 0.0,
-      "overall_rating": 8,
-      "top_fix": "优化文字位置"
+    "餐饮": {
+      "price_position": "0.78",
+      "price_font_size": 24,
+      "saturation_boost": 0.15,
+      "warmth_boost": 0.08,
+      "transition": "fade",
+      "source": "kimi"
     },
-    "老板IP": {
-      "price_position": "0.08",
-      "cta_position": "0.82",
-      "price_font_size": 60,
-      "saturation_boost": 0.07,
-      "warmth_boost": 0.02,
-      "broll_insert_rate": 0.0,
-      "overall_rating": 8,
-      "top_fix": "调整文字位置"
+    "美容": {
+      "price_position": "0.78",
+      "price_font_size": 24,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
     },
-    "引流进店": {
-      "price_position": "0.08",
-      "price_font_size": 60,
-      "saturation_boost": 0.1,
-      "overall_rating": 8,
-      "top_fix": "字体大小需调整"
+    "汽修": {
+      "price_position": "0.82",
+      "price_font_size": 24,
+      "saturation_boost": 0.15,
+      "warmth_boost": 0.08,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "建材": {
+      "price_position": "0.78",
+      "price_font_size": 56,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "零售": {
+      "price_position": "0.78",
+      "price_font_size": 24,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "教育": {
+      "price_position": "0.82",
+      "price_font_size": 24,
+      "saturation_boost": 0.15,
+      "warmth_boost": 0.08,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "健身": {
+      "price_position": "0.82",
+      "price_font_size": 56,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "宠物": {
+      "price_position": "0.78",
+      "price_font_size": 56,
+      "saturation_boost": 0.15,
+      "warmth_boost": 0.08,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "家政": {
+      "price_position": "0.82",
+      "price_font_size": 56,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
+    },
+    "摄影": {
+      "price_position": "0.82",
+      "price_font_size": 24,
+      "saturation_boost": 0.05,
+      "warmth_boost": -0.03,
+      "transition": "fade",
+      "source": "kimi"
     }
   },
-  "global_recommended": {
-    "price_position": "0.07",
-    "cta_position": "0.82",
-    "price_font_size": 68,
-    "saturation_boost": 0.12,
-    "warmth_boost": 0.05
-  },
-  "iterations": 4
+  "source": "kimi_knowledge_base",
+  "updated": "2026-07-31"
 }
