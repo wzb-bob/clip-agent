@@ -223,8 +223,8 @@ class MltEngine:
             if not png or not os.path.exists(png):
                 continue
             role = "hook" if "price_" in os.path.basename(png) else "cta"
-            # hook在上方12%·CTA在底部82%
-            y_pos = "0.12" if role == "hook" else "0.82"
+            # hook在上方5%(避免遮挡人脸)·CTA在底部85%
+            y_pos = "0.05" if role == "hook" else "0.85"
             tmp = output_path.replace('.mp4', f'_ov{i}.mp4')
             cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                    "-i", current, "-i", png,
