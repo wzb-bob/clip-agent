@@ -37,29 +37,35 @@ class TemplateGen:
 
     def price(self, text: str) -> str:
         from PIL import Image, ImageDraw
-        font = self._get_font(56)
-        img = Image.new("RGBA", (800, 200), (0,0,0,0))
+        font = self._get_font(80)
+        img = Image.new("RGBA", (1000, 300), (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([5,5,795,195], radius=30, fill=(0,0,0,60))
-        draw.rounded_rectangle([0,0,790,190], radius=30, fill=(220,20,60,230))
-        draw.rounded_rectangle([2,2,788,188], radius=28, outline=(255,255,255,60), width=2)
+        # 红色圆角背景
+        draw.rounded_rectangle([0,0,990,290], radius=40, fill=(220,20,60,230))
+        draw.rounded_rectangle([3,3,987,287], radius=38, outline=(255,255,255,60), width=2)
         bbox = draw.textbbox((0,0), text, font=font)
         tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
-        draw.text(((800-tw)//2, (200-th)//2-5), text, fill="white", font=font)
+        x, y = (1000-tw)//2, (300-th)//2-8
+        # 双层描边(黑色阴影→白色主体)·保证任何背景下可见
+        for dx, dy in [(-3,-3),(3,-3),(-3,3),(3,3)]:
+            draw.text((x+dx, y+dy), text, fill=(0,0,0,200), font=font)
+        draw.text((x, y), text, fill="white", font=font)
         return self._save(img, f"price_{hash(text)&0xffff}")
 
     def cta(self, text: str) -> str:
         from PIL import Image, ImageDraw
-        font = self._get_font(44)
+        font = self._get_font(60)
         dummy = ImageDraw.Draw(Image.new("RGBA",(1,1)))
         bbox = dummy.textbbox((0,0), text, font=font)
         tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
-        w, h = tw+120, th+40
+        w, h = tw+160, th+60
         img = Image.new("RGBA", (w, h), (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([2,2,w-2,h-2], radius=h//2, fill=(0,0,0,60))
         draw.rounded_rectangle([0,0,w-4,h-4], radius=h//2, fill=(220,20,60,240))
-        draw.text(((w-tw)//2, (h-th)//2-3), text, fill="white", font=font)
+        x, y = (w-tw)//2, (h-th)//2-5
+        for dx, dy in [(-2,-2),(2,-2),(-2,2),(2,2)]:
+            draw.text((x+dx, y+dy), text, fill=(0,0,0,200), font=font)
+        draw.text((x, y), text, fill="white", font=font)
         return self._save(img, f"cta_{hash(text)&0xffff}")
 
     def hook_label(self, text: str) -> str:

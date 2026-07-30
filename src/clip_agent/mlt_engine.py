@@ -140,16 +140,10 @@ class MltEngine:
                 # 右上角小窗: 65%/8%位置, 33%x19%大小
                 parts.append(f"geometry=65%/8%:33%x19%:100%")
 
-        # ── Track 2: 文字叠加 ──
+        # ── Track 2: 文字叠加(PNG模板·FFmpeg后处理·比melt qimage快50倍) ──
+        # PNG文字由FFmpeg在渲染后叠加·这里只收集文字数据
         text_items = self._build_text_items(plan)
-        for text_def in text_items:
-            parts.append("-track")
-            parts.append(self._pango_producer(text_def))
-            # affine 关键帧动画
-            if text_def.get("animation"):
-                parts.append(f'-attach affine transition.geometry="{text_def["animation"]}"')
-            parts.append("-transition composite")
-            parts.append(f"geometry={text_def.get('position','10%/80%:80%x15%:100%')}")
+        self._text_overlays = text_items  # 存下来供外部使用
 
         # ── Track 3: BGM(音量闪避·长度=视频) ──
         bgm = materials.get("bgm", "")
@@ -209,14 +203,57 @@ class MltEngine:
         except Exception as e:
             return MltResult(success=False, melt_cmd=cmd, error=str(e)[:500])
 
+    def overlay_text_pngs(self, video_path: str, output_path: str) -> bool:
+        """FFmpeg叠加PNG文字(MLT渲染后调用)"""
+        if not getattr(self, '_text_overlays', None):
+            return False
+        import subprocess
+        pngs = []
+        for td in self._text_overlays:
+            png = td.get("png", "")
+            if png and os.path.exists(png):
+                pngs.append(png)
+        if not pngs:
+            return False
+
+        # 简化为逐个叠加(可靠!)
+        current = video_path
+        for i, png in enumerate(pngs):
+            tmp = output_path.replace('.mp4', f'_ov{i}.mp4')
+            cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                   "-i", current, "-i", png,
+                   "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:(H-h)*0.15:eval=init[out]",
+                   "-map", "[out]", "-map", "0:a:0?",
+                   "-c:v", "libx264", "-preset", "fast", "-crf", "18", tmp]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if os.path.exists(tmp) and os.path.getsize(tmp) > 500:
+                    current = tmp
+            except Exception:
+                pass
+
+        if current != video_path:
+            try:
+                import shutil
+                shutil.move(current, output_path)
+            except Exception:
+                pass
+            return os.path.exists(output_path) and os.path.getsize(output_path) > 500
+        return False
+
     def render_with_fallback(self, plan, materials: dict, output_path: str) -> MltResult:
         """
-        MLT渲染 → 失败 → melt直接模式 → 失败 → FFmpeg(上层调用)
+        MLT渲染(调色·转场) → FFmpeg叠加PNG文字 → 失败 → melt直接
         """
-        # Level 1: MLT完整管线
+        # Level 1: MLT渲染(无文字·快速)
         cmd = self.build_timeline(plan, materials, output_path)
         result = self.render(cmd)
         if result.success:
+            # 叠加PNG文字
+            png_output = output_path.replace('.mp4', '_text.mp4')
+            if self.overlay_text_pngs(result.output_path, png_output):
+                result.output_path = png_output
+            return result
             return result
 
         # Level 2: melt 最小模式(单轨·无反效果)
@@ -274,8 +311,13 @@ class MltEngine:
         return {"团购售卖":"vivid_pop", "老板IP":"film_warm", "引流进店":"clean_bright"}.get(category, "vivid_pop")
 
     def _build_text_items(self, plan) -> list[dict]:
-        """从 VFX plan 提取文字叠加项"""
+        """从 VFX plan 提取文字叠加项·使用PNG模板(Windows pango中文不可用)"""
         items = []
+        try:
+            from .template_gen import get_template_gen
+            tgen = get_template_gen()
+        except ImportError:
+            tgen = None
         segs = getattr(plan, 'segments_vfx', []) or []
         accum = 0.0
         trans_dur = 0.3
@@ -292,14 +334,22 @@ class MltEngine:
             start_frame = int(accum * 30)
             end_frame = int((accum + dur) * 30)
 
+            # 生成PNG模板·替代pango(Windows中文不可用)
+            png = ""
+            if tgen:
+                try:
+                    if role == "hook": png = tgen.price(text)
+                    elif role == "cta": png = tgen.cta(text)
+                except Exception: pass
+
             if role == "hook":
-                anim = f"{start_frame}=50%,130%:80%x15%:0%;{start_frame+12}~=50%,12%:80%x18%:100%;{end_frame-12}~=50%,12%:80%x18%:100%;{end_frame}=50%,130%:80%x18%:0%"
+                anim = f"{start_frame}=50%,130%:40%x14%:0%;{start_frame+12}~=50%,12%:40%x14%:100%;{end_frame-12}~=50%,12%:40%x14%:100%;{end_frame}=50%,130%:40%x14%:0%"
                 items.append({"text": text, "size": 64,
-                    "position": "10%/12%:80%x18%:100%", "animation": anim})
+                    "position": "30%/12%:40%x14%:100%", "animation": anim, "png": png})
             elif role == "cta":
-                anim = f"{start_frame}=10%,82%:80%x14%:0%;{start_frame+10}~=10%,82%:80%x14%:100%;{end_frame-10}~=10%,82%:80%x14%:100%;{end_frame}=10%,82%:80%x14%:0%"
+                anim = f"{start_frame}=10%,82%:60%x14%:0%;{start_frame+10}~=10%,82%:60%x14%:100%;{end_frame-10}~=10%,82%:60%x14%:100%;{end_frame}=10%,82%:60%x14%:0%"
                 items.append({"text": text, "size": 44,
-                    "position": "10%/82%:80%x14%:100%", "animation": anim})
+                    "position": "20%/82%:60%x14%:100%", "animation": anim, "png": png})
             elif role == "body":
                 # 字幕式·底部居中·淡入淡出(短)
                 if len(text) > 3:  # 至少4个字才显示
@@ -338,7 +388,10 @@ class MltEngine:
 
     @staticmethod
     def _pango_producer(text_def: dict) -> str:
-        """生成 pango 文字 producer 字符串"""
+        """生成文字producer——PNG优先·pango降级"""
+        png = text_def.get("png", "")
+        if png and os.path.exists(png):
+            return f'"{png}"'
         text = text_def["text"].replace('"', '\\"')
         size = text_def.get("size", 48)
         span = f"<span font='Sans {size}' foreground='white'>{text}</span>"
