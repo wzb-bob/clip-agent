@@ -293,12 +293,10 @@ class MltEngine:
             end_frame = int((accum + dur) * 30)
 
             if role == "hook":
-                # 价格从下弹出·大字居中偏上
                 anim = f"{start_frame}=50%,130%:80%x15%:0%;{start_frame+12}~=50%,12%:80%x18%:100%;{end_frame-12}~=50%,12%:80%x18%:100%;{end_frame}=50%,130%:80%x18%:0%"
                 items.append({"text": text, "size": 64,
                     "position": "10%/12%:80%x18%:100%", "animation": anim})
             elif role == "cta":
-                # CTA底部淡入·引导行动
                 anim = f"{start_frame}=10%,82%:80%x14%:0%;{start_frame+10}~=10%,82%:80%x14%:100%;{end_frame-10}~=10%,82%:80%x14%:100%;{end_frame}=10%,82%:80%x14%:0%"
                 items.append({"text": text, "size": 44,
                     "position": "10%/82%:80%x14%:100%", "animation": anim})
@@ -339,17 +337,10 @@ class MltEngine:
         return ";".join(keyframes) if keyframes else ""
 
     @staticmethod
-    def _pango_producer(text_def: dict, use_png_fallback: bool = False) -> str:
-        """生成 pango 文字 producer 或 PNG 图片 producer"""
+    def _pango_producer(text_def: dict) -> str:
+        """生成 pango 文字 producer 字符串"""
         text = text_def["text"].replace('"', '\\"')
         size = text_def.get("size", 48)
-        if use_png_fallback:
-            # 渲染PNG→qimage
-            import tempfile
-            png_path = os.path.join(tempfile.gettempdir(), f"_mlt_text_{hash(text) & 0xffff}.png")
-            MltEngine._render_text_png(text, png_path, size)
-            if os.path.exists(png_path):
-                return f'"{png_path}"'  # qimage producer
         span = f"<span font='Sans {size}' foreground='white'>{text}</span>"
         return f'pango:"{span}"'
 
