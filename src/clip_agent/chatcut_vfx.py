@@ -296,12 +296,9 @@ def build_vfx_plan(
             text_effect = "hook_big"
             seg_text = seg_text[:15]
         elif role == "cta" and seg_text:
-            # CTA段: 底部显示价格或引导
+            # CTA段: 取完整引导文案(最多12字)
             text_effect = "cta_price"
-            # 提取价格关键词
-            import re
-            price_match = re.search(r'[\d]+[块元折]|¥\d+|\d+折|[囤抢团][券购]|左下', seg_text)
-            seg_text = price_match.group(0) if price_match else seg_text[:8]
+            seg_text = seg_text[:12]  # 保留完整CTA·不做过度截断
 
         seg_vfx_list.append({
             "index": i,
