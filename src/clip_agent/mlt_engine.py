@@ -216,13 +216,19 @@ class MltEngine:
         if not pngs:
             return False
 
-        # 简化为逐个叠加(可靠!)
+        # 逐个叠加·根据文字类型决定位置(hook上方·CTA底部)
         current = video_path
-        for i, png in enumerate(pngs):
+        for i, td in enumerate(self._text_overlays):
+            png = td.get("png", "")
+            if not png or not os.path.exists(png):
+                continue
+            role = "hook" if "price_" in os.path.basename(png) else "cta"
+            # hook在上方12%·CTA在底部82%
+            y_pos = "0.12" if role == "hook" else "0.82"
             tmp = output_path.replace('.mp4', f'_ov{i}.mp4')
             cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                    "-i", current, "-i", png,
-                   "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:(H-h)*0.15:eval=init[out]",
+                   "-filter_complex", f"[0:v][1:v]overlay=(W-w)/2:(H-h)*{y_pos}:eval=init[out]",
                    "-map", "[out]", "-map", "0:a:0?",
                    "-c:v", "libx264", "-preset", "fast", "-crf", "18", tmp]
             try:
