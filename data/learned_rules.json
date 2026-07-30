@@ -1,0 +1,66 @@
+{
+  "category": "团购售卖",
+  "industry": "餐饮",
+  "frames_analyzed": 3,
+  "text_overlay_ratio": 0.3333333333333333,
+  "text_position_preferred": "top_center",
+  "broll_ratio": 0.0,
+  "price_tag_ratio": 0.0,
+  "saturation_high_ratio": 0.6666666666666666,
+  "color_warmth_ratio": 0.0,
+  "recommended": {
+    "price_position": "0.08",
+    "cta_position": "0.82",
+    "price_font_size": 56,
+    "saturation_boost": 0.15,
+    "warmth_boost": 0.02,
+    "broll_insert_rate": 0.0
+  },
+  "raw_analyses": [
+    {
+      "has_text_overlay": true,
+      "text_content": "虾神龙虾 鲜货",
+      "text_position": "top_center",
+      "text_size": "large",
+      "text_color": "yellow",
+      "has_subtitle": false,
+      "subtitle_position": "none",
+      "brightness": "bright",
+      "saturation": "high",
+      "color_warmth": "neutral",
+      "shot_type": "environment",
+      "is_broll": false,
+      "has_price": false
+    },
+    {
+      "has_text_overlay": false,
+      "text_content": "",
+      "text_position": "",
+      "text_size": "",
+      "text_color": "",
+      "has_subtitle": false,
+      "subtitle_position": "",
+      "brightness": "bright",
+      "saturation": "high",
+      "color_warmth": "neutral",
+      "shot_type": "environment",
+      "is_broll": false,
+      "has_price": false
+    },
+    {
+      "has_text_overlay": false,
+      "text_content": "",
+      "text_position": "",
+      "text_size": "",
+      "text_color": "",
+      "has_subtitle": false,
+      "subtitle_position": "",
+      "brightness": "normal",
+      "saturation": "normal",
+      "color_warmth": "neutral",
+      "shot_type": "environment",
+      "is_broll": false,
+      "has_price": false
+    }
+  ]
+}

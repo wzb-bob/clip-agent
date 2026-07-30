@@ -233,8 +233,20 @@ def build_vfx_plan(
 
     返回的 VfxPlan 包含可直接拼接的 FFmpeg 滤镜片段。
     """
-    # 获取类别策略
-    style = CATEGORY_STYLE.get(category, CATEGORY_STYLE["团购售卖"])
+    # 获取类别策略·学习规则覆盖硬编码默认值
+    style = CATEGORY_STYLE.get(category, CATEGORY_STYLE["团购售卖"]).copy()
+    try:
+        from .video_learner import VideoLearner
+        learned = VideoLearner().load_rules("data/learned_rules.json")
+        if learned and learned.get("category") == category:
+            rec = learned.get("recommended", {})
+            if rec:
+                style["price_position"] = rec.get("price_position", "0.08")
+                style["price_font_size"] = rec.get("price_font_size", 72)
+                logger.info("应用学习规则: %s·字%dpx·位置%s", category,
+                           rec.get("price_font_size", 72), rec.get("price_position", "0.08"))
+    except Exception:
+        pass
 
     # 行业色调微调
     tweak = INDUSTRY_COLOR_TWEAK.get(industry, {})
