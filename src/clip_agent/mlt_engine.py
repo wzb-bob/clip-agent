@@ -146,14 +146,19 @@ class MltEngine:
             parts.append("-transition composite")
             parts.append(f"geometry={text_def.get('position','10%/80%:80%x15%:100%')}")
 
-        # ── Track 3: BGM ──
+        # ── Track 3: BGM(音量闪避·长度=视频) ──
         bgm = materials.get("bgm", "")
         if bgm and os.path.exists(bgm):
-            parts.append(f'-track "{bgm}"')
+            total_dur = sum(s.get("duration", 2.0) for s in (getattr(plan, 'segments_vfx', []) or []))
+            total_frames = max(int(total_dur * 30), 30)
+            parts.append(f'-track "{bgm}" out={total_frames}')
+            vol_keyframes = self._build_bgm_ducking(plan)
+            if vol_keyframes:
+                parts.append(f"-attach volume gain=\"{vol_keyframes}\"")
             parts.append("-transition mix")
-            parts.append("start=-10db:end=-10db")
+            parts.append("start=-8db:end=-8db")
 
-        # ── Consumer: 输出 MP4 ──
+        # ── Consumer: 输出 MP4(长度=口播轨) ──
         parts.append("-consumer")
         parts.append(f'avformat:"{output_path}"')
         parts.append("vcodec=libx264")
@@ -163,6 +168,7 @@ class MltEngine:
         parts.append("preset=fast")
         parts.append("progressive=1")
         parts.append("real_time=-2")
+        parts.append("terminate_on_pause=1")
 
         return " ".join(parts)
 
@@ -237,36 +243,58 @@ class MltEngine:
             role = seg.get("role", "")
             dur = seg.get("duration", 2.0)
 
-            if not text or role not in ("hook", "cta"):
+            if not text:
                 accum += dur - (trans_dur if i < len(segs)-1 else 0)
                 continue
 
-            # 帧号计算 (30fps)
             start_frame = int(accum * 30)
             end_frame = int((accum + dur) * 30)
 
             if role == "hook":
-                # 价格弹出: 从下飞入
-                anim = f"{start_frame}=50%,120%:80%x15%:0%;{start_frame+10}~=50%,15%:80%x15%:100%;{end_frame-10}~=50%,15%:80%x15%:100%;{end_frame}=50%,120%:80%x15%:0%"
-                items.append({
-                    "text": text,
-                    "size": 56,
-                    "position": "10%/15%:80%x15%:100%",
-                    "animation": anim,
-                })
+                # 价格从下弹出·大字居中偏上
+                anim = f"{start_frame}=50%,130%:80%x15%:0%;{start_frame+12}~=50%,12%:80%x18%:100%;{end_frame-12}~=50%,12%:80%x18%:100%;{end_frame}=50%,130%:80%x18%:0%"
+                items.append({"text": text, "size": 64,
+                    "position": "10%/12%:80%x18%:100%", "animation": anim})
             elif role == "cta":
-                # CTA: 底部固定·淡入淡出
-                anim = f"{start_frame}=10%,80%:80%x15%:0%;{start_frame+8}~=10%,80%:80%x15%:100%;{end_frame-8}~=10%,80%:80%x15%:100%;{end_frame}=10%,80%:80%x15%:0%"
-                items.append({
-                    "text": text,
-                    "size": 48,
-                    "position": "10%/80%:80%x15%:100%",
-                    "animation": anim,
-                })
+                # CTA底部淡入·引导行动
+                anim = f"{start_frame}=10%,82%:80%x14%:0%;{start_frame+10}~=10%,82%:80%x14%:100%;{end_frame-10}~=10%,82%:80%x14%:100%;{end_frame}=10%,82%:80%x14%:0%"
+                items.append({"text": text, "size": 44,
+                    "position": "10%/82%:80%x14%:100%", "animation": anim})
+            elif role == "body":
+                # 字幕式·底部居中·淡入淡出(短)
+                if len(text) > 3:  # 至少4个字才显示
+                    anim = f"{start_frame+5}=10%,88%:80%x10%:0%;{start_frame+10}~=10%,88%:80%x10%:100%;{end_frame-15}~=10%,88%:80%x10%:100%;{end_frame-5}=10%,88%:80%x10%:0%"
+                    items.append({"text": text, "size": 28,
+                        "position": "10%/88%:80%x10%:100%", "animation": anim})
 
             accum += dur - (trans_dur if i < len(segs)-1 else 0)
 
         return items
+
+    def _build_bgm_ducking(self, plan) -> str:
+        """生成BGM音量闪避关键帧(有文字/口播时BGM降低)"""
+        segs = getattr(plan, 'segments_vfx', []) or []
+        if not segs:
+            return ""
+        total_frames = int(sum(s.get("duration",2) for s in segs) * 30)
+        keyframes = []
+        accum = 0.0
+        for i, seg in enumerate(segs):
+            dur = seg.get("duration", 2.0)
+            role = seg.get("role", "")
+            start_f = int(accum * 30)
+            end_f = int((accum + dur) * 30)
+            if role in ("hook", "cta", "body"):
+                # 有内容段: BGM降低
+                keyframes.append(f"{start_f}=-3db")
+                keyframes.append(f"{start_f+3}=-8db")
+                keyframes.append(f"{end_f-3}=-8db")
+                keyframes.append(f"{end_f}=-3db")
+            accum += dur
+        if keyframes:
+            keyframes.insert(0, "0=-3db")
+            keyframes.append(f"{total_frames}=-3db")
+        return ";".join(keyframes) if keyframes else ""
 
     @staticmethod
     def _pango_producer(text_def: dict) -> str:
