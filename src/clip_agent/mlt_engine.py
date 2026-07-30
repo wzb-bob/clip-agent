@@ -74,13 +74,18 @@ class MltResult:
 
 
 class MltEngine:
-    """MLT 时间线引擎 · melt CLI 封装"""
+    """MLT 时间线引擎 · melt CLI 封装
+
+    注意: Windows上pango中文渲染依赖fontconfig, 可能不可用。
+    降级方案: 用FFmpeg预渲染PNG文字→qimage叠加。
+    """
 
     def __init__(self, melt_path: str = "", width: int = 1080, height: int = 1920, fps: int = 30):
         self.melt = melt_path or MELT
         self.width = width
         self.height = height
         self.fps = fps
+        self._use_pango = self._check_pango()
 
     @property
     def profile(self) -> str:
@@ -227,6 +232,43 @@ class MltEngine:
 
     # ── 内部辅助 ──
 
+    def _check_pango(self) -> bool:
+        """检测pango中文渲染是否可用·不可用则降级到PNG文字"""
+        try:
+            import tempfile, subprocess
+            test_out = os.path.join(tempfile.gettempdir(), "_mlt_pango_test.mp4")
+            cmd = f'{self.melt} color:red out=5 -track "pango:测试" out=5 -transition composite -consumer avformat:"{test_out}" vcodec=libx264 crf=18 real_time=-2'
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            return proc.returncode == 0 and os.path.exists(test_out) and os.path.getsize(test_out) > 500
+        except Exception:
+            return False
+
+    @staticmethod
+    def _render_text_png(text: str, output_path: str, font_size: int = 48, color: str = "white"):
+        """用PIL渲染中文文字PNG(独立于系统字体·始终可用)"""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            img = Image.new("RGBA", (800, 200), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            # 尝试加载系统字体·失败则用默认
+            font = None
+            for fp in ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc"]:
+                if os.path.exists(fp):
+                    font = ImageFont.truetype(fp, font_size)
+                    break
+            if font is None:
+                font = ImageFont.load_default()
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            # 裁剪到文字大小
+            img = Image.new("RGBA", (tw + 40, th + 20), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            draw.text((20, 10), text, fill=color, font=font)
+            img.save(output_path, "PNG")
+            return True
+        except ImportError:
+            return False
+
     @staticmethod
     def _color_for_category(category: str) -> str:
         return {"团购售卖":"vivid_pop", "老板IP":"film_warm", "引流进店":"clean_bright"}.get(category, "vivid_pop")
@@ -297,10 +339,17 @@ class MltEngine:
         return ";".join(keyframes) if keyframes else ""
 
     @staticmethod
-    def _pango_producer(text_def: dict) -> str:
-        """生成 pango 文字 producer 字符串"""
+    def _pango_producer(text_def: dict, use_png_fallback: bool = False) -> str:
+        """生成 pango 文字 producer 或 PNG 图片 producer"""
         text = text_def["text"].replace('"', '\\"')
         size = text_def.get("size", 48)
+        if use_png_fallback:
+            # 渲染PNG→qimage
+            import tempfile
+            png_path = os.path.join(tempfile.gettempdir(), f"_mlt_text_{hash(text) & 0xffff}.png")
+            MltEngine._render_text_png(text, png_path, size)
+            if os.path.exists(png_path):
+                return f'"{png_path}"'  # qimage producer
         span = f"<span font='Sans {size}' foreground='white'>{text}</span>"
         return f'pango:"{span}"'
 
