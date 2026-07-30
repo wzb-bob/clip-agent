@@ -202,17 +202,21 @@ def run_chatcut_workflow(
         results["steps"]["video_trim"] = len(timeline.segments)
         mp4_path = str(out / f"成片_{vp.stem}.mp4")
 
-        # Step 3.5: MLT渲染(尝试·失败静默跳过)
+        # Step 3.5: MLT渲染优先(用真实VFX plan的文字+时序)
         try:
             from .mlt_engine import MltEngine, mlt_verify
+            from .chatcut_vfx import build_vfx_plan
             if mlt_verify():
+                mlt_plan = build_vfx_plan(timeline, str(vp), script_category, industry)
                 mlt_engine = MltEngine()
-                mlt_ok, mlt_path = _try_mlt_render(mlt_engine, str(vp), broll_videos or [],
-                                                    script_category, mp4_path)
-                if mlt_ok:
-                    results["output"] = mlt_path
+                mlt_materials = {"talking": str(vp), "broll": broll_videos or []}
+                mlt_result = mlt_engine.render_with_fallback(mlt_plan, mlt_materials, mp4_path)
+                if mlt_result.success:
+                    results["output"] = mlt_result.output_path
                     results["steps"]["mlt_render"] = True
-                    results["vfx"] = {"engine": "MLT", "category": script_category}
+                    results["vfx"] = {"engine": "MLT", "category": script_category,
+                                     "label": mlt_plan.category_label,
+                                     "beats": mlt_plan.beat_count, "bpm": mlt_plan.bpm}
         except Exception:
             pass
 
