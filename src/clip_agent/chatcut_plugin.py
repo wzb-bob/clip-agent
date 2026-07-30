@@ -76,6 +76,15 @@ def _ensure_x264(video_path: str) -> str | None:
         return None
 
 
+def _try_mlt_render(engine, talking: str, broll: list, category: str, output: str) -> tuple:
+    """尝试MLT渲染·失败返回(False, error)"""
+    from .mlt_engine import MltResult
+    mlt_materials = {"talking": talking, "broll": broll or []}
+    result = engine.render_with_fallback(
+        type('P',(),{'category':category,'segments_vfx':[]})(), mlt_materials, output)
+    return result.success, result.output_path if result.success else result.error
+
+
 def _detect_category(script_text: str) -> str:
     """从脚本文本自动检测类别"""
     if any(kw in script_text for kw in ['块','元','¥','折','团购','左下','囤','抢','限时']):
@@ -191,10 +200,26 @@ def run_chatcut_workflow(
         )
         timeline = run_four_category_pipeline(script_text or "口播脚本", materials, output_dir=str(out))
         results["steps"]["video_trim"] = len(timeline.segments)
-
-        # Step 4: VFX渲染（主路径）
         mp4_path = str(out / f"成片_{vp.stem}.mp4")
-        vfx_rendered = False
+
+        # Step 3.5: MLT渲染(尝试·失败静默跳过)
+        try:
+            from .mlt_engine import MltEngine, mlt_verify
+            if mlt_verify():
+                mlt_engine = MltEngine()
+                mlt_ok, mlt_path = _try_mlt_render(mlt_engine, str(vp), broll_videos or [],
+                                                    script_category, mp4_path)
+                if mlt_ok:
+                    results["output"] = mlt_path
+                    results["steps"]["mlt_render"] = True
+                    results["vfx"] = {"engine": "MLT", "category": script_category}
+        except Exception:
+            pass
+
+        # Step 4: FFmpeg VFX渲染（MLT已出片则跳过）
+        vfx_rendered = bool(results.get("output"))
+        if results.get("output"):
+            vfx_rendered = True
 
         try:
             from .chatcut_vfx import build_vfx_plan, render_with_vfx
