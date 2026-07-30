@@ -1,14 +1,16 @@
 {
-  "last_updated": "2026-07-31",
+  "last_updated": "2026-07-31T00:18:59",
   "total_frames": 4,
   "categories": {
     "团购售卖": {
-      "price_position": "0.08",
+      "price_position": "0.09",
       "cta_position": "0.82",
-      "price_font_size": 56,
-      "saturation_boost": 0.15,
+      "price_font_size": 60,
+      "saturation_boost": 0.14,
       "warmth_boost": 0.02,
-      "broll_insert_rate": 0.0
+      "broll_insert_rate": 0.0,
+      "overall_rating": 8,
+      "top_fix": "优化文字位置"
     },
     "老板IP": {
       "price_position": "0.08",
@@ -25,5 +27,6 @@
     "price_font_size": 68,
     "saturation_boost": 0.12,
     "warmth_boost": 0.05
-  }
+  },
+  "iterations": 1
 }
