@@ -3,11 +3,29 @@
 
 输入: 脚本 + 四类素材(口播/环境/产品/引导)
 输出: 剪映草稿时间线(draft_content.json)
-
-气口切割: Whisper 词级时间戳 → 句间停顿 → 精确切点
-镜头衔接: 口播主轨 → 停顿→B-roll覆盖 → 口播 → ... → CTA
 """
+# ── Whisper模型缓存(模块级·避免重复加载) ──
 from __future__ import annotations
+_whisper_model = None
+_whisper_model_name = None
+
+def _get_whisper_model(model_name="tiny"):
+    """懒加载+faster_whisper·比whisper快3-5倍"""
+    global _whisper_model, _whisper_model_name
+    if _whisper_model is not None and _whisper_model_name == model_name:
+        return _whisper_model
+    try:
+        from faster_whisper import WhisperModel
+        _whisper_model = WhisperModel(model_name, device='cpu', compute_type='int8')
+        _whisper_model_name = model_name
+        import logging
+        logging.getLogger(__name__).info("faster_whisper模型已加载: %s", model_name)
+    except ImportError:
+        import whisper
+        _whisper_model = whisper.load_model(model_name)
+        _whisper_model_name = model_name
+    return _whisper_model
+
 import json, logging, os, tempfile, time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -242,17 +260,29 @@ def _detect_breath_points(video_path: str) -> list[dict]:
         except Exception:
             pass
 
-        import whisper
-        model = whisper.load_model("small")
-        result = model.transcribe(video_path, word_timestamps=True)
+        model = _get_whisper_model("tiny")  # 缓存·tiny模型够用气口检测
+        # faster_whisper返回(segments, info)·兼容whisper格式
         word_times = []
-        for seg in result.get("segments", []):
-            for w in seg.get("words", []):
-                word_times.append({
-                    "word": w.get("word", "").strip(),
-                    "start": round(w.get("start", 0), 2),
-                    "end": round(w.get("end", 0), 2),
-                })
+        try:
+            segs, _ = model.transcribe(video_path, word_timestamps=True)
+            for seg in segs:
+                if seg.words:
+                    for w in seg.words:
+                        word_times.append({
+                            "word": w.word.strip(),
+                            "start": round(w.start, 2),
+                            "end": round(w.end, 2),
+                        })
+        except AttributeError:
+            # 降级: 标准whisper
+            result = model.transcribe(video_path, word_timestamps=True)
+            for seg in result.get("segments", []):
+                for w in seg.get("words", []):
+                    word_times.append({
+                        "word": w.get("word", "").strip(),
+                        "start": round(w.get("start", 0), 2),
+                        "end": round(w.get("end", 0), 2),
+                    })
         for i in range(1, len(word_times)):
             gap_ms = int((word_times[i]["start"] - word_times[i-1]["end"]) * 1000)
             # 自适应阈值: 快语速(>3字/s)用200ms·慢语速用400ms
@@ -343,18 +373,21 @@ def _build_timeline(
             mat_cat = "talking"
             is_broll = False
 
-        # 🆕 气口对齐: 段结束时间对齐到最近的自然停顿点
+        # 🆕 气口对齐: 段结束对齐到最近的自然停顿(±500ms·优先句末停顿)
         seg_end = cur_sec + dur
         best_bp = None
         for bp in breath_points:
-            if abs(bp["at_sec"] - seg_end) < 0.8 and bp.get("is_sentence_break"):
-                if best_bp is None or abs(bp["at_sec"] - seg_end) < abs(best_bp["at_sec"] - seg_end):
+            dist = abs(bp["at_sec"] - seg_end)
+            if dist < 0.5:  # 收紧到500ms(原800ms)
+                is_sentence = bp.get("is_sentence_break", bp.get("gap_ms",0) >= 400)
+                score = (1.0 if is_sentence else 0.5) / max(dist, 0.05)
+                if best_bp is None or score > best_score:
                     best_bp = bp
+                    best_score = score
         if best_bp:
-            # 在自然停顿+2帧处切
             from .director_ai import snap_to_frame
-            dur = snap_to_frame(best_bp["at_sec"] - cur_sec + 2/30, 30)
-            seg["duration_sec"] = dur  # 更新时长
+            dur = snap_to_frame(best_bp["at_sec"] - cur_sec + 0.07, 30)  # +2帧≈0.07s
+            seg["duration_sec"] = max(0.5, dur)  # 最短0.5s
 
         # 转场
         transition = "dissolve" if is_broll else "cut"
