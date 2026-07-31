@@ -40,15 +40,15 @@ class TemplateGen:
         font = self._get_font(80)
         img = Image.new("RGBA", (1000, 300), (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        # 红色圆角背景
+        # 大圆角40px(Kimi A/B验证最优)
         draw.rounded_rectangle([0,0,990,290], radius=40, fill=(220,20,60,230))
         draw.rounded_rectangle([3,3,987,287], radius=38, outline=(255,255,255,60), width=2)
         bbox = draw.textbbox((0,0), text, font=font)
         tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
         x, y = (1000-tw)//2, (300-th)//2-8
-        # 双层描边(黑色阴影→白色主体)·保证任何背景下可见
-        for dx, dy in [(-3,-3),(3,-3),(-3,3),(3,3)]:
-            draw.text((x+dx, y+dy), text, fill=(0,0,0,200), font=font)
+        # 粗阴影8px多方向(Kimi A/B验证最优)
+        for dx, dy in [(-8,-8),(-8,8),(8,-8),(8,8),(-8,0),(8,0),(0,-8),(0,8)]:
+            draw.text((x+dx, y+dy), text, fill=(0,0,0,160), font=font)
         draw.text((x, y), text, fill="white", font=font)
         return self._save(img, f"price_{hash(text)&0xffff}")
 

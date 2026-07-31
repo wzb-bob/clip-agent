@@ -13,7 +13,9 @@
         "font_size": "B(72px)·更大更清晰",
         "position": "B(0.10)·居中更平衡",
         "saturation": "B(0.25)·高饱和突出食物"
-      }
+      },
+      "text_shadow": "thick",
+      "corner_radius": 40
     },
     "美容": {
       "price_position": "0.78",
