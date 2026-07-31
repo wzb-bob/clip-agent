@@ -43,6 +43,16 @@ CATEGORY_STYLE = {
         "cta_effects": ["glow_warm"],               # CTA=暖光引导(boxblur+blend)
         "transition": "crossfade",        # 交叉淡入
     },
+    "趣味长剧情": {
+        "label": "悬念节奏型",
+        "global_color": "bleach_bypass",   # eq: 高对比·电影感
+        "global_texture": "film_grain_light", # 胶片颗粒·质感
+        "hook_effects": ["speed_ramp", "vignette_soft"],   # 钩子=变速+暗角
+        "body_effects": ["film_grain_light"],              # 主体=胶片质感
+        "broll_effects": ["crossfade_slow", "bloom_light"],# B-roll=慢淡入+柔光
+        "cta_effects": ["glow_warm"],                     # CTA=暖光
+        "transition": "crossfade",         # 交叉淡入
+    },
     "引流进店": {
         "label": "明亮引导型",
         "global_color": "bright_clean",   # eq: 明亮干净·展示环境
