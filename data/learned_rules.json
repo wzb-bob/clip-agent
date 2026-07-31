@@ -1,14 +1,19 @@
 {
   "categories": {
     "餐饮": {
-      "price_position": "0.07",
-      "price_font_size": 64,
+      "price_position": "0.10",
+      "price_font_size": 72,
       "saturation_boost": 0.25,
       "warmth_boost": 0.06,
       "brightness_boost": 0.06,
       "transition": "fade",
       "source": "kimi_ab_test",
-      "note": "Kimi A/B测试: B版高饱和+高亮更适合食物展示"
+      "note": "Kimi A/B测试: B版高饱和+高亮更适合食物展示",
+      "ab_test_results": {
+        "font_size": "B(72px)·更大更清晰",
+        "position": "B(0.10)·居中更平衡",
+        "saturation": "B(0.25)·高饱和突出食物"
+      }
     },
     "美容": {
       "price_position": "0.78",
