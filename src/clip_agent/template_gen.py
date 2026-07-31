@@ -41,8 +41,8 @@ class TemplateGen:
         img = Image.new("RGBA", (1000, 300), (0,0,0,0))
         draw = ImageDraw.Draw(img)
         # 大圆角40px(Kimi A/B验证最优)
-        draw.rounded_rectangle([0,0,990,290], radius=40, fill=(220,20,60,230))
-        draw.rounded_rectangle([3,3,987,287], radius=38, outline=(255,255,255,60), width=2)
+        draw.rounded_rectangle([0,0,990,290], radius=40, fill=(220,20,60,180))
+        draw.rounded_rectangle([3,3,987,287], radius=38, outline=(255,255,255,40), width=2)
         bbox = draw.textbbox((0,0), text, font=font)
         tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
         x, y = (1000-tw)//2, (300-th)//2-8
@@ -61,7 +61,7 @@ class TemplateGen:
         w, h = tw+160, th+60
         img = Image.new("RGBA", (w, h), (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([0,0,w-4,h-4], radius=h//2, fill=(220,20,60,240))
+        draw.rounded_rectangle([0,0,w-4,h-4], radius=h//2, fill=(220,20,60,180))
         x, y = (w-tw)//2, (h-th)//2-5
         for dx, dy in [(-2,-2),(2,-2),(-2,2),(2,2)]:
             draw.text((x+dx, y+dy), text, fill=(0,0,0,200), font=font)
