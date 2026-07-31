@@ -575,9 +575,15 @@
         }
       },
       "total_examples": 40
+    },
+    "美容": {
+      "saturation_boost": 1.0,
+      "brightness_boost": 0.06,
+      "source": "kimi_ab_beauty"
     }
   },
   "total_examples": 120,
   "source": "kimi_batch_learning",
-  "updated": "2026-07-31T16:00:18"
+  "updated": "2026-07-31T16:00:18",
+  "last_updated": "2026-07-31"
 }
