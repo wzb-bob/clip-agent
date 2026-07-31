@@ -32,6 +32,14 @@ def main():
     batch.add_argument("--video-dir", default="", help="视频/画面素材目录")
     batch.add_argument("--output-dir", "-o", default="./clip_output", help="输出目录")
 
+    # 演示模式——三类脚本一键生成
+    demo = sub.add_parser("demo", help="演示模式·三类脚本全部生成")
+    demo.add_argument("video", help="口播视频文件")
+    demo.add_argument("--broll", default="", help="B-roll/空镜文件(可选)")
+    demo.add_argument("--bgm", default="", help="BGM文件(可选)")
+    demo.add_argument("--output", "-o", default="./demo_output", help="输出目录")
+    demo.add_argument("--industry", default="餐饮", help="行业(默认餐饮)")
+
     # 分析模式
     analyze = sub.add_parser("analyze", help="分析视频素材")
     analyze.add_argument("video", help="视频文件路径")
@@ -43,11 +51,49 @@ def main():
         _do_clip(args)
     elif args.command == "batch":
         _do_batch(args)
+    elif args.command == "demo":
+        _do_demo(args)
     elif args.command == "analyze":
         _do_analyze(args)
     else:
         parser.print_help()
 
+
+def _do_demo(args):
+    """演示模式——三类脚本全部生成"""
+    from .chatcut_plugin import run_chatcut_workflow
+    import os, time
+
+    scripts = {
+        '团购售卖': '68块!十只活虾!干煸盱眙技术独一家!凌晨四点挑的活虾!左下角囤券!',
+        '老板IP': '那年我关掉4S店回来开这个龙虾馆,很多人不理解但我知道家乡味道不能断。',
+        '引流进店': '导航搜虾神龙虾!二楼包间周末全满!找不到的直接打电话我下楼接你!',
+    }
+
+    print("🎬 长益剪辑Agent · 演示模式")
+    print(f"   行业: {args.industry} · 三类脚本全部生成")
+    print()
+
+    brolls = [args.broll] if args.broll and os.path.exists(args.broll) else []
+    for cat, script in scripts.items():
+        print(f"📝 {cat}...")
+        t0 = time.time()
+        result = run_chatcut_workflow(
+            video_path=args.video, script_text=script,
+            output_dir=args.output, script_category=cat,
+            industry=args.industry, broll_videos=brolls)
+        elapsed = time.time() - t0
+        steps = result.get('steps', {})
+        engine = 'MLT' if 'mlt_render' in steps else ('VFX' if 'vfx_render' in steps else 'BASIC')
+        vfx = result.get('vfx', {})
+        o = result.get('output', '')
+        if o and os.path.exists(o):
+            print(f"  ✅ {engine} {vfx.get('label','')} {os.path.getsize(o)/1024:.0f}KB {elapsed:.1f}s")
+        else:
+            print(f"  ❌ {result.get('error','?')[:50]}")
+        print()
+
+    print(f"📁 输出: {args.output}")
 
 def _do_clip(args):
     """单条剪辑"""
