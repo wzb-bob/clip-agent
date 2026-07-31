@@ -247,18 +247,11 @@ def _preflight_check(materials: CategoryMaterials, script: str) -> dict:
 
 
 def _detect_breath_points(video_path: str) -> list[dict]:
-    """Whisper气口检测 → 人声分离增强→词级时间戳→切点"""
+    """气口检测: faster_whisper词间→FFmpeg静音降级"""
     points = []
     try:
-        # 🆕 人声分离: 去BGM+降噪→提高Whisper准确度
-        try:
-            from .audio_separator import enhance_audio_for_whisper
-            enhanced = enhance_audio_for_whisper(video_path)
-            if enhanced:
-                video_path = enhanced  # 用增强后的音频
-                logger.debug("使用增强音频进行Whisper转录")
-        except Exception:
-            pass
+        # 直接用原视频(音频增强对DJI音频不可靠)
+        pass
 
         model = _get_whisper_model("tiny")  # 缓存·tiny模型够用气口检测
         # faster_whisper返回(segments, info)·兼容whisper格式
@@ -299,6 +292,29 @@ def _detect_breath_points(video_path: str) -> list[dict]:
                 })
     except Exception as e:
         logger.warning("气口检测失败: %s", e)
+
+    # 降级: Whisper<3词→FFmpeg静音检测(可靠·快速)
+    if len(points) < 3:
+        try:
+            import subprocess, re
+            r = subprocess.run(["ffmpeg","-hide_banner","-i",video_path,
+                "-af","silencedetect=n=-30dB:d=0.3","-f","null","-"],
+                capture_output=True, text=True, timeout=60)
+            st = re.findall(r"silence_start:\s*([\d.]+)", r.stderr)
+            en = re.findall(r"silence_end:\s*([\d.]+)", r.stderr)
+            for i in range(len(st)):
+                start = float(st[i]); end = float(en[i]) if i<len(en) else start+0.5
+                points.append({
+                    "at_sec": round((start+end)/2, 2),
+                    "gap_ms": int((end-start)*1000),
+                    "is_sentence_break": (end-start)>=0.5,
+                    "word_before": "", "word_after": "",
+                })
+            if points:
+                logger.info("FFmpeg静音降级: %d个切点", len(points))
+        except Exception:
+            pass
+
     return points
 
 
