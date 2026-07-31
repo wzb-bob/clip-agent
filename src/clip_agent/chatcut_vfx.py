@@ -243,8 +243,23 @@ def build_vfx_plan(
             if rec:
                 style["price_position"] = rec.get("price_position", "0.08")
                 style["price_font_size"] = rec.get("price_font_size", 72)
-                logger.info("应用学习规则: %s·字%dpx·位置%s", category,
-                           rec.get("price_font_size", 72), rec.get("price_position", "0.08"))
+    except Exception:
+        pass
+
+    # 内容分析: Kimi Vision画面分类驱动效果(异步·失败静默跳过)
+    content_types = {}
+    try:
+        from .content_analyzer import ContentAnalyzer
+        ca = ContentAnalyzer()
+        if ca.api_key:
+            results = ca.analyze_video(video_path, sample_interval=2.0)
+            for r in results:
+                t = r["time_sec"]
+                ctype = r.get("type", "unknown")
+                content_types[t] = r
+            if content_types:
+                logger.info("内容分析: %d帧·%d类", len(content_types),
+                           len(set(r.get("type","?") for r in content_types.values())))
     except Exception:
         pass
 
@@ -282,8 +297,16 @@ def build_vfx_plan(
 
         role = _guess_role(i, len(segments), seg)
 
-        # 选择该角色的效果列表
+        # 选择该角色的效果列表·内容分析可覆盖
         effect_names = style.get(f"{role}_effects", style.get("body_effects", []))
+        # 内容驱动: 找到该段时间的画面类型·特定类型用专门效果
+        seg_mid = accum_time + dur/2
+        for ct, cr in sorted(content_types.items()):
+            if abs(ct - seg_mid) < 1.5:
+                ca_effect = cr.get("effect", "")
+                if ca_effect:
+                    effect_names = [ca_effect]
+                break
 
         # 生成结构化效果描述(_build_segment_vf会把它们转为FFmpeg滤镜)
         seg_filters = []
