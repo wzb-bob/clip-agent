@@ -93,6 +93,24 @@
       "saturation_boost": 0.1,
       "overall_rating": 8,
       "top_fix": "优化文字位置"
+    },
+    "老板IP": {
+      "price_font_size": 56,
+      "price_position": "0.08",
+      "saturation_boost": 0.85,
+      "warmth_boost": 0.02,
+      "transition": "fade",
+      "source": "kimi_ab",
+      "note": "A。因为A版饱和度较高，色彩更丰富，能够营造出更具电影感的氛围，适合讲述创业故事。"
+    },
+    "引流进店": {
+      "price_font_size": 60,
+      "price_position": "0.08",
+      "saturation_boost": 0.1,
+      "brightness_boost": 0.12,
+      "transition": "slideleft",
+      "source": "kimi_ab",
+      "note": "B。因为高亮+12%能更好地展示店面环境，吸引顾客到店。"
     }
   },
   "source": "kimi_knowledge_base",
