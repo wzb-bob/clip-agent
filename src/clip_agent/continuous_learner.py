@@ -72,7 +72,7 @@ class ContinuousLearner:
         import requests
 
         prompt = f"""评估AI剪辑的{category}类{industry}行业口播视频。返回JSON:
-{{"text_position_ok":true/false,"suggested_text_y":"0.05-0.15","text_too_small":true/false,"suggested_font_size":56-100,"color_too_strong":true/false,"suggested_saturation":"high/normal/low","overall_rating":1-10,"top_fix":"最需要改进的一项10字内"}}"""
+{{"text_position_ok":true/false,"suggested_text_y":"0.05-0.15","text_too_small":true/false,"suggested_font_size":56-100,"color_too_strong":true/false,"suggested_saturation":"high/normal/low","has_artifact":true/false,"artifact_note":"有无大面积色块遮挡/黑窗·10字内","overall_rating":1-10,"top_fix":"最需要改进的一项10字内"}}"""
 
         content = [{'type': 'text', 'text': prompt}]
         for fp in frames:

@@ -200,31 +200,11 @@ def run_chatcut_workflow(
         )
         timeline = run_four_category_pipeline(script_text or "口播脚本", materials, output_dir=str(out))
         results["steps"]["video_trim"] = len(timeline.segments)
+        if getattr(timeline, "material_adequacy", None):
+            results["material_adequacy"] = timeline.material_adequacy
         mp4_path = str(out / f"成片_{vp.stem}.mp4")
 
-        # Step 3.5: MLT渲染优先(用真实VFX plan的文字+时序)
-        try:
-            from .mlt_engine import MltEngine, mlt_verify
-            from .chatcut_vfx import build_vfx_plan
-            if mlt_verify():
-                mlt_plan = build_vfx_plan(timeline, str(vp), script_category, industry)
-                mlt_engine = MltEngine()
-                mlt_materials = {"talking": str(vp), "broll": broll_videos or []}
-                mlt_result = mlt_engine.render_with_fallback(mlt_plan, mlt_materials, mp4_path)
-                if mlt_result.success:
-                    results["output"] = mlt_result.output_path
-                    results["steps"]["mlt_render"] = True
-                    results["vfx"] = {"engine": "MLT", "category": script_category,
-                                     "label": mlt_plan.category_label,
-                                     "beats": mlt_plan.beat_count, "bpm": mlt_plan.bpm}
-        except Exception:
-            pass
-
-        # Step 4: FFmpeg VFX渲染（MLT已出片则跳过）
-        vfx_rendered = bool(results.get("output"))
-        if results.get("output"):
-            vfx_rendered = True
-
+        # Step 3.5: FFmpeg VFX渲染优先(人眼+Kimi双验证路径·引擎单跑不重复渲染)
         try:
             from .chatcut_vfx import build_vfx_plan, render_with_vfx
 
@@ -252,12 +232,32 @@ def run_chatcut_workflow(
                         }
                         if Path(vfx_output).exists():
                             results["size_mb"] = round(Path(vfx_output).stat().st_size / 1024 / 1024, 1)
-                        vfx_rendered = True
                         logger.info("VFX成片: %.1fMB·%d拍·%.0fBPM·%s/%s",
                                    results.get("size_mb", 0), vfx_plan.beat_count,
                                    vfx_plan.bpm, script_category, industry)
         except Exception as e:
-            logger.warning("VFX渲染失败(降级): %s", str(e)[:100])
+            logger.warning("VFX渲染失败(降级MLT): %s", str(e)[:100])
+
+        # Step 4: MLT渲染(VFX失败时降级·成功则跳过)
+        if not results.get("output"):
+            try:
+                from .mlt_engine import MltEngine, mlt_verify
+                from .chatcut_vfx import build_vfx_plan
+                if mlt_verify():
+                    mlt_plan = build_vfx_plan(timeline, str(vp), script_category, industry)
+                    mlt_engine = MltEngine()
+                    mlt_materials = {"talking": str(vp), "broll": broll_videos or []}
+                    mlt_result = mlt_engine.render_with_fallback(mlt_plan, mlt_materials, mp4_path)
+                    if mlt_result.success:
+                        results["output"] = mlt_result.output_path
+                        results["steps"]["mlt_render"] = True
+                        results["vfx"] = {"engine": "MLT", "category": script_category,
+                                         "label": mlt_plan.category_label,
+                                         "beats": mlt_plan.beat_count, "bpm": mlt_plan.bpm}
+            except Exception:
+                pass
+
+        vfx_rendered = bool(results.get("output"))
 
         # Step 4b: 基础渲染（降级）
         if not vfx_rendered:
@@ -292,6 +292,14 @@ def run_chatcut_workflow(
             from .jianying_timeline_builder import export_draft_zip
             results["output"] = export_draft_zip(timeline.draft_path)
             results["steps"]["draft_zip"] = bool(results["output"])
+
+        # Step 5: 确定性artifact检测(补Kimi盲区·失败静默)
+        if results.get("output") and Path(results["output"]).exists():
+            try:
+                from .artifact_detector import detect_artifacts
+                results["artifact_check"] = detect_artifacts(results["output"])
+            except Exception as e:
+                logger.debug("artifact检测跳过: %s", e)
 
         results["success"] = bool(results.get("output"))
         results["elapsed"] = round(time.time() - t0, 1)
