@@ -9,7 +9,9 @@ from pathlib import Path
 SRC = Path(__file__).parent / "src" / "clip_agent"
 DST = Path(r"c:\Users\wangzibo\enterprise-agent-content\acquisition-backend\app\services\clip_agent")
 
-EXCLUDE = {"__init__.py", ".env", ".env.example", ".gitignore"}
+# __init__.py: 后端有独立兼容导入层
+# digital_human.py: 后端独立开发(不在d:\clip-agent维护)
+EXCLUDE = {"__init__.py", "digital_human.py", ".env", ".env.example", ".gitignore"}
 SUBDIRS = {"openmontage_full", "vfx"}  # 递归同步这些子目录
 
 def _sync_dir(src_dir: Path, dst_dir: Path, dry_run: bool) -> int:
