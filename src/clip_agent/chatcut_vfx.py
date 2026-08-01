@@ -1101,8 +1101,10 @@ def _srt_to_drawtext(srt_path: str, font_path: str, width: int, height: int) -> 
         return ""
 
     # 为每条字幕生成drawtext(底部居中·白字黑边)
+    # 注意: font_path来自_find_font()已是ffmpeg安全格式(C\:/...), 二次转义会把路径搞坏
+    # (实测: SRT字幕全程豆腐块·被segment drawtext掩盖, body段清空后才暴露)
     parts = []
-    font_esc = font_path.replace("\\", "/").replace(":", "\\:")
+    font_esc = font_path
     for i, e in enumerate(entries[:20]):  # 最多20条
         parts.append(
             f"drawtext=fontfile='{font_esc}':text='{e['text']}':"
