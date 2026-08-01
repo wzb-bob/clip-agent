@@ -1,13 +1,26 @@
 {
-  "ÍÅ¹ºÊÛÂô": {
+  "å›¢è´­å”®å–": {
     "templates": {
-      "sale_price_first": 1
+      "sale_price_first": 2
     },
     "colors": {
-      "vivid": 1
+      "vivid": 2
     },
     "bgms": {
-      "¿ì½Ú×à¿¨µã/µç×Ó": 1
+      "å¿«èŠ‚å¥å¡ç‚¹/ç”µå­": 2
+    },
+    "count": 2,
+    "avg_quality": 87.5
+  },
+  "è€æ¿IP": {
+    "templates": {
+      "ip_story_beginning": 1
+    },
+    "colors": {
+      "warm": 1
+    },
+    "bgms": {
+      "æ¸©æš–/æ²»æ„ˆ/é’¢ç´": 1
     },
     "count": 1,
     "avg_quality": 75.0
