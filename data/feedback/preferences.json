@@ -1,0 +1,15 @@
+{
+  "团购售卖": {
+    "templates": {
+      "sale_price_first": 1
+    },
+    "colors": {
+      "vivid": 1
+    },
+    "bgms": {
+      "快节奏卡点/电子": 1
+    },
+    "count": 1,
+    "avg_quality": 75.0
+  }
+}
