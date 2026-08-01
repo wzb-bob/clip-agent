@@ -190,6 +190,97 @@ def detect_artifacts(video_path: str, sample_count: int = 5,
                 "center": h["center"],
             })
 
+    # 冻结检测(2fps差分·独立通道)
+    try:
+        for r in _detect_freeze(video_path):
+            confirmed.append({"type": "freeze", **r})
+    except Exception as e:
+        logger.debug("冻结检测跳过: %s", e)
+
     if confirmed:
         logger.warning("artifact检出: %s", confirmed)
     return {"clean": not confirmed, "checked_frames": len(frames), "artifacts": confirmed}
+
+
+# ══════════════════════════════════════════════════════════
+# 冻结检测: 相邻帧差分持续近零=画面卡死(v3实测7.2-7.6s冻结)
+# ══════════════════════════════════════════════════════════
+
+def _freeze_runs(diffs: list[float], fps: float,
+                 diff_thr: float = 0.3, min_freeze_s: float = 1.5) -> list[dict]:
+    """相邻帧差分序列→冻结区间(纯函数·可单测)
+    diffs[i]=第i帧与第i+1帧的差分均值·diffs<t thr视为静止"""
+    min_frames = max(1, int(min_freeze_s * fps))
+    runs = []
+    start = None
+    for i, d in enumerate(diffs):
+        if d < diff_thr:
+            if start is None:
+                start = i
+        else:
+            if start is not None and i - start >= min_frames:
+                runs.append({"start": round(start / fps, 1),
+                             "end": round((i + 1) / fps, 1)})
+            start = None
+    if start is not None and len(diffs) - start >= min_frames:
+        runs.append({"start": round(start / fps, 1),
+                     "end": round(len(diffs) / fps, 1)})
+    return runs
+
+
+def _detect_freeze(video_path: str, fps: float = 2.0,
+                   max_dur: float = 120.0) -> list[dict]:
+    """2fps抽小帧→相邻差分→冻结段; 同通道顺带检测全屏黑段(black_gap)"""
+    import json as _json
+    try:
+        r = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json",
+                            "-show_format", video_path],
+                           capture_output=True, text=True, timeout=15)
+        dur = min(float(_json.loads(r.stdout)["format"]["duration"]), max_dur)
+    except Exception:
+        return []
+    tmp = tempfile.mkdtemp(prefix="fz_")
+    pat = os.path.join(tmp, "f%04d.jpg").replace("\\", "/")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                    "-t", str(dur), "-i", video_path,
+                    "-vf", f"fps={fps},scale={_FRAME_W}:{_FRAME_H}",
+                    "-q:v", "5", pat],
+                   capture_output=True, timeout=120)
+    from PIL import Image
+    frames = sorted(f for f in os.listdir(tmp) if f.endswith(".jpg"))
+    diffs, brightness, prev = [], [], None
+    for f in frames:
+        img = np.asarray(Image.open(os.path.join(tmp, f)).convert("L"), dtype=float)
+        brightness.append(float(img.mean()))
+        if prev is not None:
+            diffs.append(float(np.abs(img - prev).mean()))
+        prev = img
+    return _freeze_runs(diffs, fps) + _black_gaps(brightness, fps)
+
+
+def _black_gaps(brightness: list[float], fps: float,
+                dark_thr: float = 5.0, min_s: float = 0.5) -> list[dict]:
+    """全屏亮度持续<dark_thr(≥min_s秒)→black_gap
+    v3实测: B-roll素材黑尾播进成片0.5s——冻结(≥1.5s)和黑窗(<50%画面)都漏检"""
+    min_frames = max(1, int(min_s * fps))
+    runs, start = [], None
+    for i, b in enumerate(brightness):
+        if b < dark_thr:
+            if start is None:
+                start = i
+        else:
+            if start is not None and i - start >= min_frames:
+                runs.append({"type": "black_gap", "start": round(start / fps, 1),
+                             "end": round(i / fps, 1)})
+            start = None
+    if start is not None and len(brightness) - start >= min_frames:
+        runs.append({"type": "black_gap", "start": round(start / fps, 1),
+                     "end": round(len(brightness) / fps, 1)})
+    return runs
+
+
+def detect_freeze_artifacts(video_path: str) -> dict:
+    """独立入口: 只查冻结"""
+    runs = _detect_freeze(video_path)
+    return {"clean": not runs, "artifacts": [
+        {"type": "freeze", **r} for r in runs]}
