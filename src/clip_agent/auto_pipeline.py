@@ -54,6 +54,10 @@ def build_pseudo_script(understanding) -> dict | None:
             raw.append({"text": text, "start_sec": start, "end_sec": end})
     sentences = _merge_short(raw)
 
+    # ── 字幕三修复用: 开机口令/尾部残词(句级判定) ──
+    sentences = _drop_slate_sentence(sentences)
+    sentences = _drop_tail_fragment(sentences)
+
     # ── 情绪标签: 音频moments按时间窗归属 ──
     for i, sent in enumerate(sentences):
         sent["index"] = i + 1
@@ -112,6 +116,39 @@ def _merge_short(raw: list[dict]) -> list[dict]:
             else:
                 merged.append(dict(r))
     return merged
+
+
+def _drop_slate_sentence(sentences: list[dict]) -> list[dict]:
+    """剔除开机口令句(前3s内命中口令模式)——复用whisper_srt_generator的模式表"""
+    if not sentences:
+        return sentences
+    from .whisper_srt_generator import _SLATE_PATTERNS
+    first = sentences[0]
+    if first["start_sec"] < 3.0:
+        for pat in _SLATE_PATTERNS:
+            m = pat.search(first["text"])
+            if m:
+                # 口令覆盖整句→删句; 部分→裁掉口令段文字
+                stripped = (first["text"][:m.start()] + first["text"][m.end():]).strip()
+                logger.info("伪脚本: 剔除开机口令 %s", first["text"][:12])
+                if stripped:
+                    first["text"] = stripped
+                else:
+                    sentences = sentences[1:]
+                break
+    return sentences
+
+
+def _drop_tail_fragment(sentences: list[dict]) -> list[dict]:
+    """剔除尾部孤立残句(长静音后≤2字)——与字幕三修同规则"""
+    if len(sentences) < 2:
+        return sentences
+    last, prev = sentences[-1], sentences[-2]
+    gap = last["start_sec"] - prev["end_sec"]
+    if gap >= 0.8 and len(last["text"]) <= 2:
+        logger.info("伪脚本: 剔除尾部残句 %s", last["text"])
+        return sentences[:-1]
+    return sentences
 
 
 def _emotion_for(sent: dict, moments: list[dict]) -> tuple[str, int]:
@@ -223,6 +260,7 @@ def auto_edit(video_path: str, pseudo_script: dict,
             "industry": industry,
             "artifact_check": info.get("artifact_check"),
             "script_audio_match": info.get("script_audio_match"),
+            "planned_duration": round(sum(s["duration_sec"] for s in work_sents), 1),
             "size_mb": info.get("size_mb")}
 
 
@@ -252,7 +290,8 @@ def auto_pipeline(video_path: str, output_path: str = "",
         return {"success": False, "error": "无语音内容·无法自主编辑",
                 "elapsed": round(time.time() - t0, 1)}
 
-    # Step 3: 编辑+渲染(失败回退≤3次: 质量门禁不过→降级重渲)
+    # Step 3: 编辑+渲染(仅"可修复"的门禁失败才回退重渲: brand_safety可换风格修,
+    # broll/素材类失败重渲无意义)
     result, last_gates = {}, None
     for attempt in range(1, max_retries + 1):
         result = auto_edit(vp, pseudo, output_path,
@@ -263,14 +302,16 @@ def auto_pipeline(video_path: str, output_path: str = "",
         gates = run_auto_quality_gates({
             "video_path": vp, "pseudo_script": pseudo,
             "output_path": result["output"],
-            "expected_duration": sum(s["duration_sec"] for s in pseudo["sentences"]),
+            "expected_duration": result.get("planned_duration", 0),
             "broll_videos": broll_videos or [],
         })
         last_gates = gates
         if gates["passed_all"]:
             break
-        logger.warning("质量门禁未过(第%d次): %s", attempt,
-                       [g["gate"] for g in gates["gates"] if not g["passed"]])
+        failed_names = {g["gate"] for g in gates["gates"] if not g["passed"]}
+        logger.warning("质量门禁未过(第%d次): %s", attempt, failed_names)
+        if "brand_safety" not in failed_names:
+            break  # 素材类失败重渲无用·直接报出
         if attempt < max_retries:
             script_type = "老板IP"  # 回退到最保守风格重渲
     else:
