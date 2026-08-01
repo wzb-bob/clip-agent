@@ -334,6 +334,16 @@ def build_vfx_plan(
                 # bloom_light, glow_warm, slow_zoom, crossfade_slow, speed_ramp, pulse_ring
                 seg_filters.append({"type": "color", "shader": fx_name})
 
+        # 句级语义→效果增强(趣味长剧情先行·无命中保持角色默认)
+        if category == "趣味长剧情":
+            mood = _classify_sentence(getattr(seg, 'script_text', '') or '')
+            mood_shader = _SENTIMENT_SHADER.get(mood or "")
+            if mood_shader and not any(f["shader"] == mood_shader for f in seg_filters):
+                seg_filters.insert(0, {"type": "color", "shader": mood_shader})
+            # 揭示段前用circleopen转场(悬念释放感)
+            if mood == "reveal" and seg_vfx_list:
+                seg_vfx_list[-1]["xfade"] = "circleopen"
+
         # 提取该段的脚本文字(用于文字烧录)
         seg_text = getattr(seg, 'script_text', '') or ''
         text_effect = ""
@@ -501,8 +511,9 @@ def render_with_vfx(
                 accum += dur_this - t_dur
                 next_label = f"x{i}" if i < len(temp_segs) - 2 else "v"
 
-                # cut用fadeblack(更快更干净)
-                t_type = "fadeblack" if seg_trans == "cut" else trans_type
+                # cut用fadeblack(更快更干净); 句级语义可指定逐边界xfade(如揭示前circleopen)
+                seg_xfade = vfx_plan.segments_vfx[i].get("xfade", "") if i < len(vfx_plan.segments_vfx) else ""
+                t_type = "fadeblack" if seg_trans == "cut" else (seg_xfade or trans_type)
                 filter_parts.append(
                     f"[{prev_label}][{i+1}]xfade=transition={t_type}:"
                     f"duration={t_dur}:offset={offset:.2f}[{next_label}]"
@@ -779,7 +790,31 @@ def _texture_shader_to_vf(shader_name: str) -> str:
 
 def _xfade_for_category(category: str) -> str:
     """脚本类别→xfade转场类型"""
-    return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft"}.get(category, "fade")
+    return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft",
+            "趣味长剧情": "dissolve"}.get(category, "fade")
+
+
+# ── 句级语义→效果映射(趣味长剧情先行) ──
+_SENTIMENT_KEYWORDS = {
+    "suspense": ("奇怪", "愣住", "没想到", "真相", "沉默", "神秘", "奇怪"),
+    "conflict": ("但是", "却", "突然", "竟然", "居然"),
+    "reveal":  ("原来", "才明白", "答案", "真相是", "原来如此"),
+    "warm":    ("味道", "家乡", "故事", "坚持", "回来"),
+}
+_SENTIMENT_SHADER = {
+    "suspense": "vignette_soft",    # 悬念→暗角聚焦
+    "conflict": "bleach_bypass",    # 冲突→高对比
+    "reveal":  "bright_grade",      # 揭示→提亮
+    "warm":    "warm_grade",        # 温情→暖色
+}
+
+
+def _classify_sentence(text: str) -> str | None:
+    """按关键词给句子分情绪类别·无命中返回None"""
+    for mood, keywords in _SENTIMENT_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            return mood
+    return None
 
 
 def _overlay_broll(video_path: str, plan: VfxPlan,
