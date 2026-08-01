@@ -693,6 +693,25 @@ JSON格式:
                 except Exception:
                     pass
 
+        # 0.6: 素材质量门禁(过暗/模糊/人脸/黑尾·只报告不拦截)
+        if job.video_slots:
+            try:
+                from .material_checker import check_sentence_materials, verify_sentence_order
+                mc = check_sentence_materials(job.sentences or [], job.video_slots)
+                job.enhancement_report["material_check"] = mc
+                if mc["bad"]:
+                    logger.warning("素材质量: %d句待改进 %s", len(mc["bad"]),
+                                   {i: [x["type"] for x in mc["per_sentence"][i]["issues"]]
+                                    for i in mc["bad"]})
+                # 顺序校验(重·默认关·CLIP_VERIFY_ORDER=1开启)
+                if os.getenv("CLIP_VERIFY_ORDER") == "1":
+                    vo = verify_sentence_order(job.sentences or [], job.video_slots)
+                    job.enhancement_report["order_check"] = vo
+                    if vo.get("suspects"):
+                        logger.warning("疑似素材传错顺序: %s", vo["suspects"])
+            except Exception as e:
+                logger.debug("素材质量检查跳过: %s", e)
+
         # 1c. 视频分析 (Kimi K2.6→Kimi轻量→OpenCV降级)
         video_slots = job.video_slots or {}
         for idx, path in video_slots.items():
