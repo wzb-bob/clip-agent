@@ -357,16 +357,16 @@ def understand_media(video_path: str, script_text: str = "",
     输出完整的MediaUnderstanding — 包含音频理解、视频理解、跨模态对齐。
     """
     vp = Path(video_path)
-    result = MediaUnderstanding(file_path=str(vp))
-
-    # 基础信息
+    # 基础信息(先probe时长·dataclass必填)
+    duration = 0.0
     try:
         from .local_video_analyzer import _probe_video_ffprobe
         info = _probe_video_ffprobe(str(vp))
         if info:
-            result.duration_sec = info["duration"]
+            duration = float(info.get("duration", 0))
     except Exception:
         pass
+    result = MediaUnderstanding(file_path=str(vp), duration_sec=duration)
 
     t0 = time.time()
 
