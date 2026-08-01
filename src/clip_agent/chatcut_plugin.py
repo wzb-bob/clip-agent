@@ -96,6 +96,36 @@ def _detect_category(script_text: str) -> str:
     return "团购售卖"
 
 
+# 中文口播语速≈4.5字/s(实测普通商户口播4-5字/s)
+_CHARS_PER_SEC = 4.5
+
+
+def estimate_reading_seconds(script_text: str) -> float:
+    """脚本朗读时长预估(纯函数)"""
+    import re
+    chars = len(re.sub(r"[\s，。！？、,.!?~…·—\-「」『』\"'“”‘’:：;；()（）]", "", script_text))
+    return round(chars / _CHARS_PER_SEC, 1)
+
+
+def script_audio_verdict(script_est_s: float, audio_s: float) -> dict:
+    """脚本预估时长vs口播音频时长→匹配判定(纯函数)
+
+    架构事实: 成片时长=口播音频时长(-shortest截断)。
+    32s脚本配8s口播→成片只出前1/3剧情(实测)。
+    """
+    if audio_s <= 0:
+        return {"verdict": "未知", "hint": ""}
+    ratio = script_est_s / audio_s
+    if ratio > 1.2:
+        max_chars = int(audio_s * _CHARS_PER_SEC)
+        return {"verdict": "脚本过长", "ratio": round(ratio, 1),
+                "hint": f"成片只会出前{audio_s:.0f}s内容·建议脚本≤{max_chars}字"}
+    if ratio < 0.6:
+        return {"verdict": "脚本过短", "ratio": round(ratio, 1),
+                "hint": "口播后半段无脚本覆盖·建议补文案或剪短口播"}
+    return {"verdict": "匹配", "ratio": round(ratio, 1), "hint": ""}
+
+
 def _detect_industry(script_text: str, video_path: str = "") -> str:
     """从脚本+路径自动检测行业"""
     combined = script_text + " " + video_path
@@ -180,6 +210,22 @@ def run_chatcut_workflow(
             vp = Path(converted)
         broll_videos = [_ensure_x264(b) or b for b in (broll_videos or [])]
         product_videos = [_ensure_x264(p) or p for p in (product_videos or [])]
+
+        # Step 0.5: 脚本↔口播时长匹配(给脚本Agent可机读的自我纠正信号)
+        if script_text:
+            try:
+                from .chatcut_vfx import _probe_duration
+                audio_s = _probe_duration(str(vp))
+                est = estimate_reading_seconds(script_text)
+                verdict = script_audio_verdict(est, audio_s)
+                results["script_audio_match"] = {
+                    "script_chars": len(script_text), "script_est_s": est,
+                    "audio_s": audio_s, **verdict,
+                }
+                if verdict["verdict"] != "匹配":
+                    logger.warning("脚本↔口播%s: %s", verdict["verdict"], verdict["hint"])
+            except Exception:
+                pass
 
         # Step 1+2: 音频→字幕
         from .audio_separator import enhance_audio_for_whisper
