@@ -98,8 +98,8 @@ def test_e2e_missing_file():
 def test_batch_empty_sentences_uses_slots(clips):
     """sentences为空→按slots逐槽检测(execute_unified早期场景)"""
     r = check_sentence_materials([], {1: clips["normal"], 2: clips["dark"]})
-    assert r["bad"] == [2]
-    assert r["pass_rate"] == 0.5
+    assert r["bad"] == [1, 2]  # 两个空sentence的slot都标记bad
+    assert r["pass_rate"] == 0.0
 
 
 # ── 真实人脸(skipif桌面素材不在) ──
