@@ -888,9 +888,36 @@ JSON格式:
         unified_job.enhancement_report.update(job.enhancement_report)
         unified_job.enhancement_report["pipeline"] = "unified_director"
 
-        # 🆕 直接MP4渲染(不依赖旧export的video_status)
+        # 🆕 直接MP4渲染(VFX优先·pro_renderer降级)
         mp4_rendered = False
         if output_dir:
+            os.makedirs(output_dir, exist_ok=True)  # ffmpeg不能自建目录·实测VFX/pro_renderer都因此失败过
+            # ── VFX渲染(与chatcut同路径: 句级效果/字幕/artifact检测全继承) ──
+            try:
+                from .chatcut_vfx import build_vfx_plan, render_with_vfx
+                from .chatcut_plugin import _detect_industry
+                industry = _detect_industry(job.script_text, "")
+                vfx_out = os.path.join(output_dir, "成片.mp4")
+                ok, info = _render_unified_vfx(
+                    unified_job.sentences, job.video_slots or {},
+                    job.script_type, industry, job.script_text, vfx_out)
+                if ok:
+                    mp4_rendered = True
+                    unified_job.enhancement_report["mp4_rendered"] = True
+                    unified_job.enhancement_report["mp4_path"] = info["output"]
+                    unified_job.enhancement_report["mp4_engine"] = "VFX"
+                    if info.get("size_mb"):
+                        unified_job.enhancement_report["mp4_size_mb"] = info["size_mb"]
+                    unified_job.enhancement_report["artifact_check"] = info.get("artifact_check")
+                    unified_job.enhancement_report["script_audio_match"] = info.get("script_audio_match")
+                    logger.info("VFX成片: %s·%s", vfx_out, info.get("artifact_check", {}).get("clean"))
+                else:
+                    logger.warning("VFX渲染失败(降级pro_renderer): %s", str(info)[:100])
+            except Exception as e:
+                logger.warning("VFX渲染异常(降级pro_renderer): %s", str(e)[:100])
+
+        if output_dir and not mp4_rendered:
+            # ── 降级: pro_renderer ──
             try:
                 from .pro_renderer import RenderJob, render_professional
                 color_map = {"老板IP": "warm", "团购售卖": "vivid", "引流进店": "bright"}
@@ -946,6 +973,149 @@ JSON格式:
                    plan.emotional_arc[:50])
 
         return unified_job
+
+
+def _clip_for_sentence(video_slots: dict, s, i: int) -> str:
+    """句→素材: index优先→位置fallback→复用任一可用(与pro_renderer块同契约)"""
+    vf = video_slots.get(s.index if hasattr(s, 'index') else i + 1)
+    if not vf or not os.path.exists(vf):
+        vf = video_slots.get(i + 1)
+    if not vf or not os.path.exists(vf):
+        vf = next((v for v in video_slots.values() if os.path.exists(v)), "")
+    return vf if vf and os.path.exists(vf) else ""
+
+
+def _concat_sentence_audio(clips: list[str], out_wav: str) -> str:
+    """按句序拼接各素材的音轨→连贯旁白(16k单声道·两句以上才需要)"""
+    import subprocess, tempfile
+    if len(clips) == 1:
+        return clips[0]
+    tmp = tempfile.mkdtemp(prefix="aud_")
+    parts = []
+    for i, c in enumerate(clips):
+        p = os.path.join(tmp, f"a{i}.wav")
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                            "-i", c, "-vn", "-ac", "1", "-ar", "16000", p],
+                           capture_output=True, timeout=60)
+        if r.returncode == 0 and os.path.exists(p):
+            parts.append(p)
+    if not parts:
+        return clips[0]
+    lst = os.path.join(tmp, "list.txt")
+    with open(lst, "w", encoding="utf-8") as f:
+        for p in parts:
+            f.write(f"file '{p.replace(chr(92), '/')}'\n")
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                        "-f", "concat", "-safe", "0", "-i", lst,
+                        "-ac", "1", "-ar", "16000", out_wav],
+                       capture_output=True, timeout=60)
+    return out_wav if r.returncode == 0 and os.path.exists(out_wav) else clips[0]
+
+
+def _render_unified_vfx(sentences: list, video_slots: dict,
+                        script_type: str, industry: str,
+                        script_text: str, output_path: str) -> tuple[bool, dict]:
+    """句级素材→VFX渲染(与chatcut同函数·句级语义效果/黑尾裁剪全继承)
+
+    联动要点:
+    - 每句一个segment(不整片循环)·段时长钳到素材有效时长
+    - 字幕直接从句子文本合成SRT(不经Whisper·文本零误差·逐句对齐)
+    - 出片后artifact_check + 逐句script_audio_match
+    """
+    from .chatcut_vfx import build_vfx_plan, render_with_vfx, _probe_duration, _content_duration
+    from .chatcut_plugin import estimate_reading_seconds, script_audio_verdict
+    from .artifact_detector import detect_artifacts
+
+    class _Seg:
+        pass
+    class _TL:
+        pass
+
+    # ── 逐句素材+时长钳制 ──
+    segs, segment_files, clips = [], [], []
+    accum = 0.0
+    audio_est_total, audio_real_total = 0.0, 0.0
+    for i, s in enumerate(sentences):
+        vf = _clip_for_sentence(video_slots, s, i)
+        if not vf:
+            continue
+        dur = float(getattr(s, 'duration_sec', 3.0) or 3.0)
+        cd = _content_duration(vf)          # 黑尾裁剪(口播也适用)
+        if cd and dur > cd:
+            dur = max(0.5, cd)
+        src = _probe_duration(vf)
+        if src and dur > src:
+            dur = max(0.5, src)             # 口播不循环·钳到实际时长
+        seg = _Seg()
+        seg.duration_sec = dur
+        seg.script_text = getattr(s, 'text', '') or ''
+        seg.is_broll = bool(getattr(s, 'is_broll', False))
+        seg.material_file = vf
+        seg.start_sec = accum
+        seg.transition = "cut" if seg.is_broll else "crossfade"
+        segs.append(seg)
+        segment_files.append((vf, dur))
+        clips.append(vf)
+        accum += dur
+        audio_est_total += estimate_reading_seconds(seg.script_text)
+        audio_real_total += dur
+
+    if not segs:
+        return False, {"error": "无有效句级素材"}
+
+    tl = _TL()
+    tl.segments = segs
+    plan = build_vfx_plan(tl, segment_files[0][0], script_type, industry)
+    if not plan.success:
+        return False, {"error": "VFX计划构建失败"}
+
+    # ── 字幕: 句子文本→SRT(精确文本·逐句时间) ──
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="uvfx_")
+    srt_path = os.path.join(tmp, "sentences.srt")
+    _write_srt_from_sentences(segs, srt_path)
+
+    # ── 旁白: 各句音轨按序拼接 ──
+    narration = _concat_sentence_audio(clips, os.path.join(tmp, "narration.wav"))
+
+    ok, out = render_with_vfx(plan, segment_files,
+                              audio_path=narration, output_path=output_path,
+                              srt_path=srt_path)
+    if not ok:
+        return False, {"error": out}
+
+    info = {"output": out}
+    try:
+        info["size_mb"] = round(os.path.getsize(out) / 1024 / 1024, 1)
+    except Exception:
+        pass
+    try:
+        info["artifact_check"] = detect_artifacts(out)
+    except Exception:
+        info["artifact_check"] = None
+    verdict = script_audio_verdict(audio_est_total, audio_real_total)
+    info["script_audio_match"] = {"script_est_s": round(audio_est_total, 1),
+                                  "audio_s": round(audio_real_total, 1), **verdict}
+    return True, info
+
+
+def _write_srt_from_sentences(segs: list, srt_path: str) -> None:
+    """句级时间线→SRT(联动红利: 文本来自脚本而非识别·零误差)"""
+    def ts(sec: float) -> str:
+        h, m = int(sec // 3600), int((sec % 3600) // 60)
+        s, ms = int(sec % 60), int((sec % 1) * 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    lines = []
+    n = 0
+    for seg in segs:
+        text = (seg.script_text or "").strip()
+        if not text:
+            continue
+        n += 1
+        lines += [str(n), f"{ts(seg.start_sec)} --> {ts(seg.start_sec + seg.duration_sec)}",
+                  text, ""]
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
 
 # 便捷函数
