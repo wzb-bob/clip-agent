@@ -300,9 +300,20 @@ def build_vfx_plan(
     segments = timeline.segments if hasattr(timeline, 'segments') else []
     seg_vfx_list = []
     accum_time = 0.0
+    _cd_cache = {}  # blackdetect结果缓存(同文件只跑一遍)
 
     for i, seg in enumerate(segments):
         dur = getattr(seg, 'duration_sec', 2.0)
+        # B-roll黑尾裁剪: 段时长不超过素材有效内容时长(去黑屏头尾)
+        if getattr(seg, 'is_broll', False):
+            mf = getattr(seg, 'material_file', '')
+            if mf and os.path.exists(mf):
+                if mf not in _cd_cache:
+                    _cd_cache[mf] = _content_duration(mf)
+                cd = _cd_cache[mf]
+                if cd and dur > cd:
+                    logger.info("B-roll段时长 %.1fs→%.1fs(素材有效内容)", dur, cd)
+                    dur = max(0.5, cd)
         seg_end = accum_time + dur
         engine.update(seg_end)
 
@@ -447,11 +458,18 @@ def render_with_vfx(
             vf_parts = _build_segment_vf(seg_vfx, width, height)
             temp_out = os.path.join(tmpdir, f"seg_{i:03d}.mp4")
 
+            # B-roll段素材不够长→循环输入填充(口播段不循环)
+            loop_args = []
+            if seg_vfx.get("is_broll"):
+                src_dur = _probe_duration(file_path)
+                if src_dur and duration > src_dur + 0.1:
+                    loop_args = ["-stream_loop", "-1"]
+
             if vf_parts:
                 vf_str = ",".join(vf_parts)
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", file_path,
+                    *loop_args, "-i", file_path,
                     "-t", str(duration),
                     "-vf", vf_str,
                     "-r", "30", "-video_track_timescale", "90000",
@@ -462,7 +480,7 @@ def render_with_vfx(
             else:
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", file_path,
+                    *loop_args, "-i", file_path,
                     "-t", str(duration),
                     "-r", "30", "-video_track_timescale", "90000",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
@@ -678,6 +696,41 @@ def _find_font() -> str:
             # Windows: C:/Windows/Fonts/simhei.ttf → C\:/Windows/Fonts/simhei.ttf
             return fp.replace("\\", "/").replace(":", "\\:")
     return ""
+
+
+def _probe_duration(path: str) -> float:
+    """ffprobe取媒体时长(秒)·失败0"""
+    import subprocess, json as _json
+    try:
+        r = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json",
+                            "-show_format", path],
+                           capture_output=True, text=True, timeout=10)
+        return float(_json.loads(r.stdout)["format"]["duration"])
+    except Exception:
+        return 0.0
+
+
+def _content_duration(path: str) -> float:
+    """有效内容时长: 去掉黑屏头尾(blackdetect)。失败/无黑屏=文件时长
+
+    实测: 用户/测试B-roll常见尾部黑屏(_test_dji.mp4后2.5s全黑),
+    直接按文件时长切段会把黑屏播进成片。
+    """
+    import subprocess, re
+    try:
+        r = subprocess.run(["ffmpeg", "-i", path,
+                            "-vf", "blackdetect=d=0.5:pix_th=0.10",
+                            "-an", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=60)
+        intervals = [(float(m.group(1)), float(m.group(2))) for m in
+                     re.finditer(r"black_start:([\d.]+) black_end:([\d.]+)", r.stderr)]
+        total = _probe_duration(path)
+        for start, end in intervals:
+            if total - end < 0.5:            # 黑屏一直持续到结尾
+                return max(0.5, start)       # 有效内容到该黑屏开始处
+        return total
+    except Exception:
+        return _probe_duration(path)
 
 
 def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:

@@ -64,6 +64,7 @@ class JianYingTimeline:
     talking_video: str           # 口播主视频
     breath_points: list[dict]    # 气口切点
     draft_path: str = ""
+    material_adequacy: dict | None = None   # 素材充足度(脚本/素材时长比)
 
 
 def run_four_category_pipeline(
@@ -189,21 +190,34 @@ def run_four_category_pipeline(
 
     logger.info("四类管道完成: %d段·%.1fs·%.1fs", len(timeline_segs), total_dur, elapsed)
 
-    # 🆕 时长保护: 总段长不能超过口播视频的3倍(B-roll填充)
+    # 🆕 时长保护+素材充足度评估
+    adequacy = None
     if talking_video and os.path.exists(talking_video):
         import subprocess, json as _json
         try:
             r = subprocess.run(["ffprobe","-v","quiet","-print_format","json","-show_format", talking_video],
                              capture_output=True, text=True, timeout=10)
             video_dur = float(_json.loads(r.stdout).get("format", {}).get("duration", 30))
-            # 允许总时长不超过视频时长的3倍(口播+2倍B-roll填充)
-            max_dur = video_dur * 3
+            # 有B-roll素材放宽到×4(B-roll段可循环填充), 无则保持×3
+            has_broll = bool(getattr(materials, 'environment', None)
+                             or getattr(materials, 'product', None))
+            max_dur = video_dur * (4 if has_broll else 3)
+            script_dur = total_dur
             if total_dur > max_dur:
-                logger.warning("脚本时长(%.0fs)超过视频(%.0fs)×3·缩放适配", total_dur, video_dur)
+                logger.warning("脚本时长(%.0fs)超过视频(%.0fs)×%d·缩放适配",
+                               total_dur, video_dur, 4 if has_broll else 3)
                 scale = max_dur / max(total_dur, 0.1)
                 for s in timeline_segs:
                     s.duration_sec = round(s.duration_sec * scale, 1)
                 total_dur = sum(s.duration_sec for s in timeline_segs)
+            ratio = script_dur / max(video_dur, 0.1)
+            level = "充足" if ratio <= 1.5 else ("紧张" if ratio <= 3 else "不足")
+            adequacy = {"script_dur": round(script_dur, 1),
+                        "material_dur": round(video_dur, 1),
+                        "ratio": round(ratio, 1), "level": level}
+            if level != "充足":
+                logger.warning("素材充足度%s: 脚本%.0fs/素材%.0fs——建议补拍B-roll或缩短脚本",
+                               level, script_dur, video_dur)
         except Exception:
             pass
 
@@ -214,6 +228,7 @@ def run_four_category_pipeline(
         talking_video=talking_video,
         breath_points=breath_points,
         draft_path=draft_path,
+        material_adequacy=adequacy,
     )
     result.srt_path = srt_path  # 动态属性
 
