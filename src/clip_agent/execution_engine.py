@@ -1160,8 +1160,10 @@ def _render_unified_vfx(sentences: list, video_slots: dict,
     return True, info
 
 
-def _write_srt_from_sentences(segs: list, srt_path: str) -> None:
-    """句级时间线→SRT(联动红利: 文本来自脚本而非识别·零误差)"""
+def _write_srt_from_sentences(segs: list, srt_path: str,
+                              max_chars: int = 16) -> None:
+    """句级时间线→SRT(联动红利: 文本来自脚本而非识别·零误差)
+    长句按max_chars拆行(时段内均分)——实测24字不拆会溢出画框边缘"""
     def ts(sec: float) -> str:
         h, m = int(sec // 3600), int((sec % 3600) // 60)
         s, ms = int(sec % 60), int((sec % 1) * 1000)
@@ -1172,9 +1174,14 @@ def _write_srt_from_sentences(segs: list, srt_path: str) -> None:
         text = (seg.script_text or "").strip()
         if not text:
             continue
-        n += 1
-        lines += [str(n), f"{ts(seg.start_sec)} --> {ts(seg.start_sec + seg.duration_sec)}",
-                  text, ""]
+        dur = seg.duration_sec
+        # 拆行: 每行≤max_chars·按行数均分时段
+        chunks = [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+        for k, chunk in enumerate(chunks):
+            t0 = seg.start_sec + dur * k / len(chunks)
+            t1 = seg.start_sec + dur * (k + 1) / len(chunks)
+            n += 1
+            lines += [str(n), f"{ts(t0)} --> {ts(t1)}", chunk, ""]
     with open(srt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
