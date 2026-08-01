@@ -124,7 +124,7 @@ def _generate_simple_draft(sentences, output_dir: str = "") -> str:
     }
     for s in sentences:
         draft["segments"].append({
-            "id": f"main_{s.segment_id}",
+            "id": f"main_{s.index}",
             "text": s.text_overlay or "",
             "start": s.start_sec,
             "duration": s.duration_sec,
@@ -207,7 +207,7 @@ def render_sentence_editor_html(sentences: list[ScriptSentence]) -> str:
     for s in sentences:
         hint = MATERIAL_HINTS.get(s.required_material, MATERIAL_HINTS["product_closeup"])
         broll_tag = '<span style="color:#f7a04a;font-size:0.7rem;">[B-ROLL]</span>' if s.is_broll else ''
-        upload_status = '✅' if s.upload_status == 'uploaded' else '📤'
+        upload_status = '✅' if (s.audio_status == 'uploaded' or s.video_status == 'uploaded') else '📤'
 
         rows.append(f"""
 <tr>

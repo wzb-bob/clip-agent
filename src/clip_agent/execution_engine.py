@@ -5,7 +5,7 @@
 逻辑: 三层结构(开头/介绍/结尾)·配音驱动·covers_audio·蒙太奇景别变化
 """
 from __future__ import annotations
-import json, logging, os, sys, time
+import json, logging, os, subprocess, sys, time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -225,6 +225,7 @@ JSON格式:
                     logger.debug("音频理解跳过: %s", e)
 
                 try:
+                    from .deep_skills import SceneAnalyzer
                     sa = SceneAnalyzer()
                     scene_report = sa.analyze(video_path)
                     job.enhancement_report["scene"] = {
@@ -888,6 +889,7 @@ JSON格式:
         unified_job.enhancement_report["pipeline"] = "unified_director"
 
         # 🆕 直接MP4渲染(不依赖旧export的video_status)
+        mp4_rendered = False
         if output_dir:
             try:
                 from .pro_renderer import RenderJob, render_professional
@@ -922,6 +924,7 @@ JSON格式:
                     rj.__dict__["cinematic"] = (job.script_type == "老板IP")  # 老板IP默认电影感
                     mp4_result = render_professional(rj)
                     if mp4_result.success:
+                        mp4_rendered = True
                         unified_job.enhancement_report["mp4_rendered"] = True
                         unified_job.enhancement_report["mp4_path"] = mp4_path
                         unified_job.enhancement_report["mp4_size_mb"] = mp4_result.file_size_mb
@@ -930,6 +933,10 @@ JSON格式:
                     logger.warning("无有效视频素材·跳过MP4渲染")
             except Exception as e:
                 logger.warning("MP4渲染失败: %s", e)
+
+        # 渲染给了输出目录却没出片→记error(否则status=done是假成功·实测基线零产物)
+        if output_dir and not mp4_rendered:
+            unified_job.errors.append("MP4渲染失败或无有效素材")
 
         elapsed = time.time() - t0
         unified_job.status = "done" if not unified_job.errors else "failed"
