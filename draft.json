@@ -1,5 +1,30 @@
 {
   "version": "1.0",
-  "segments": [],
-  "total_duration": 0
+  "segments": [
+    {
+      "id": "main_1",
+      "text": "68块!",
+      "start": 0.0,
+      "duration": 1.5,
+      "start_sec": 0.0,
+      "duration_sec": 1.5,
+      "broll": false,
+      "sub_type": "talking",
+      "audio": "",
+      "video": ""
+    },
+    {
+      "id": "main_2",
+      "text": "",
+      "start": 1.5,
+      "duration": 1.5,
+      "start_sec": 1.5,
+      "duration_sec": 1.5,
+      "broll": true,
+      "sub_type": "broll",
+      "audio": "",
+      "video": ""
+    }
+  ],
+  "total_duration": 3.0
 }
