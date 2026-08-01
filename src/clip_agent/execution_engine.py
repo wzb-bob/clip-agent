@@ -21,6 +21,10 @@ class ExecutionJob:
     # 上传素材(A/B槽)
     audio_slots: dict[int, str]          # {sentence_index: file_path}
     video_slots: dict[int, str]          # {sentence_index: file_path}
+    # 分镜语言(脚本Agent的shot_json·可选·有则驱动逐镜剪辑)
+    shot_json: list = field(default_factory=list)
+    # BGM音频文件路径(可选·自动闪避)
+    bgm_path: str = ""
     # 状态
     status: str = "pending"              # pending→parsing→enhancing→editing→reviewing→exporting→done
     progress_pct: float = 0.0
@@ -915,11 +919,21 @@ JSON格式:
             try:
                 from .chatcut_vfx import build_vfx_plan, render_with_vfx
                 from .chatcut_plugin import _detect_industry
+                from .shot_script import parse_shot_script, shots_to_sentences, shot_effects
                 industry = _detect_industry(job.script_text, "")
                 vfx_out = os.path.join(output_dir, "成片.mp4")
+                # shot契约: 有分镜语言→逐镜驱动; 无→句级退化
+                render_sents, fx = unified_job.sentences, None
+                if job.shot_json:
+                    ss = parse_shot_script(job.script_text, job.script_type, job.shot_json)
+                    if ss.source == "shot_json":
+                        render_sents = shots_to_sentences(ss)
+                        fx = shot_effects(ss)
+                        logger.info("shot契约: %d镜逐镜驱动", len(ss.shots))
                 ok, info = _render_unified_vfx(
-                    unified_job.sentences, job.video_slots or {},
-                    job.script_type, industry, job.script_text, vfx_out)
+                    render_sents, job.video_slots or {},
+                    job.script_type, industry, job.script_text, vfx_out,
+                    shot_fx=fx, bgm_path=job.bgm_path or _select_bgm_safe(job.script_type))
                 if ok:
                     mp4_rendered = True
                     unified_job.enhancement_report["mp4_rendered"] = True
@@ -994,6 +1008,15 @@ JSON格式:
         return unified_job
 
 
+def _select_bgm_safe(category: str) -> str:
+    """BGM自动选曲·任何异常都返回""(不阻断出片)"""
+    try:
+        from .bgm_selector import select_bgm
+        return select_bgm(category) or ""
+    except Exception:
+        return ""
+
+
 def _clip_for_sentence(video_slots: dict, s, i: int) -> str:
     """句→素材: index优先→位置fallback→复用任一可用(与pro_renderer块同契约)"""
     vf = video_slots.get(s.index if hasattr(s, 'index') else i + 1)
@@ -1033,12 +1056,15 @@ def _concat_sentence_audio(clips: list[str], out_wav: str) -> str:
 
 def _render_unified_vfx(sentences: list, video_slots: dict,
                         script_type: str, industry: str,
-                        script_text: str, output_path: str) -> tuple[bool, dict]:
+                        script_text: str, output_path: str,
+                        shot_fx: dict | None = None,
+                        bgm_path: str = "") -> tuple[bool, dict]:
     """句级素材→VFX渲染(与chatcut同函数·句级语义效果/黑尾裁剪全继承)
 
     联动要点:
     - 每句一个segment(不整片循环)·段时长钳到素材有效时长
     - 字幕直接从句子文本合成SRT(不经Whisper·文本零误差·逐句对齐)
+    - shot_fx(可选): 分镜意图(转场/情绪着色/字号/叠加文)逐镜覆盖
     - 出片后artifact_check + 逐句script_audio_match
     """
     from .chatcut_vfx import build_vfx_plan, render_with_vfx, _probe_duration, _content_duration
@@ -1088,6 +1114,22 @@ def _render_unified_vfx(sentences: list, video_slots: dict,
     if not plan.success:
         return False, {"error": "VFX计划构建失败"}
 
+    # shot契约: 分镜意图逐镜覆盖(转场/情绪着色/字号/叠加文)
+    if shot_fx:
+        for sv in plan.segments_vfx:
+            fx = shot_fx.get(sv.get("index", -1) + 1)  # segments_vfx 0-based→shot 1-based
+            if not fx:
+                continue
+            if fx.get("xfade"):
+                sv["xfade"] = fx["xfade"]
+            if fx.get("shader") and not any(f.get("shader") == fx["shader"] for f in sv["filters"]):
+                sv["filters"].insert(0, {"type": "color", "shader": fx["shader"]})
+            if fx.get("text_size"):
+                sv["text_size"] = fx["text_size"]
+            if fx.get("overlay_text"):
+                sv["text"] = fx["overlay_text"]
+                sv["text_y_frac"] = 0.25  # 避开底部字幕区
+
     # ── 字幕: 句子文本→SRT(精确文本·逐句时间) ──
     import tempfile
     tmp = tempfile.mkdtemp(prefix="uvfx_")
@@ -1099,7 +1141,7 @@ def _render_unified_vfx(sentences: list, video_slots: dict,
 
     ok, out = render_with_vfx(plan, segment_files,
                               audio_path=narration, output_path=output_path,
-                              srt_path=srt_path)
+                              srt_path=srt_path, bgm_path=bgm_path)
     if not ok:
         return False, {"error": out}
 
@@ -1155,9 +1197,12 @@ def quick_execute(script_text: str, script_type: str = "团购售卖",
 
 def quick_direct(script_text: str, script_type: str = "团购售卖",
                  audio_slots: dict = None, video_slots: dict = None,
-                 output_dir: str = "", on_progress: callable = None) -> ExecutionJob:
+                 output_dir: str = "", on_progress: callable = None,
+                 shot_json: list = None, bgm_path: str = "") -> ExecutionJob:
     """
     🆕 统一导演模式 — 一行代码完成从理解到成片。
+    shot_json: 脚本Agent的分镜语言(可选·逐镜驱动剪辑)
+    bgm_path: BGM音频文件(可选·自动闪避混音)
     """
     engine = ChangyiExecutionEngine()
     job = ExecutionJob(
@@ -1166,5 +1211,7 @@ def quick_direct(script_text: str, script_type: str = "团购售卖",
         script_type=script_type,
         audio_slots=audio_slots or {},
         video_slots=video_slots or {},
+        shot_json=shot_json or [],
+        bgm_path=bgm_path,
     )
     return engine.execute_unified(job, output_dir, on_progress)

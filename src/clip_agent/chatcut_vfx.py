@@ -795,14 +795,15 @@ def _build_segment_vf(seg_vfx: dict, width: int, height: int) -> list[str]:
             f"drawbox=x=iw*0.15:y={cta_y}:w=iw*0.7:h=4:color=white@0.5:t=fill"
         )
 
-    # 文字烧录——价格/钩子/CTA
+    # 文字烧录——价格/钩子/CTA(shot契约可覆盖字号/位置)
     text = seg_vfx.get("text", "")
     font_path = _find_font()
     if text and font_path:
         text_effect = seg_vfx.get("text_effect", "")
-        font_size = 56 if role in ("hook", "cta") else 42
+        font_size = seg_vfx.get("text_size") or (56 if role in ("hook", "cta") else 42)
         font_color = "red" if role == "cta" else "white"
-        text_y = int(height * 0.25) if role == "hook" else int(height * 0.82)
+        default_y = int(height * 0.25) if role == "hook" else int(height * 0.82)
+        text_y = int(height * seg_vfx["text_y_frac"]) if "text_y_frac" in seg_vfx else default_y
 
         escaped_text = text.replace(":", "\\:").replace("'", "\\'")
         vf_parts.append(
