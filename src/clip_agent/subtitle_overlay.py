@@ -29,11 +29,14 @@ def render_text_to_png(text: str, width: int, height: int,
 
         # 尝试加载中文字体
         font = None
+        # 跨平台: Windows(WINDIR自适应)/Mac/Linux
+        _windir = os.environ.get("WINDIR", "C:/Windows").replace("\\", "/")
         candidates = [
-            "C:/Windows/Fonts/simhei.ttf",
-            "C:/Windows/Fonts/msyh.ttc",
+            f"{_windir}/Fonts/simhei.ttf",
+            f"{_windir}/Fonts/msyh.ttc",
             "/System/Library/Fonts/PingFang.ttc",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         ]
         for fp in candidates:
             if os.path.exists(fp):

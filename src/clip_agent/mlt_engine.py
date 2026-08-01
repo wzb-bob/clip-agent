@@ -25,17 +25,29 @@ logger = logging.getLogger(__name__)
 # ── melt 路径检测 ──
 
 def _find_melt() -> str:
-    """自动检测 melt.exe 位置"""
+    """自动检测 melt 位置(跨平台: Windows便携版/安装版·Mac .app·Linux PATH)"""
+    import shutil
+    # PATH优先(brew/apt安装的直接可用)
+    on_path = shutil.which("melt") or shutil.which("melt.exe")
+    if on_path:
+        return on_path
     candidates = [
+        # Windows
         os.path.expanduser("~/shotcut/Shotcut/melt.exe"),
         "C:/Program Files/Shotcut/melt.exe",
         os.path.expanduser("~/Desktop/Shotcut/melt.exe"),
+        # macOS (Shotcut.app)
+        "/Applications/Shotcut.app/Contents/MacOS/melt",
+        os.path.expanduser("~/Applications/Shotcut.app/Contents/MacOS/melt"),
+        # Linux
+        "/usr/bin/melt",
+        "/usr/local/bin/melt",
+        os.path.expanduser("~/shotcut/Shotcut/melt"),
     ]
     for p in candidates:
         if os.path.exists(p):
             return p
-    # 最后尝试 PATH
-    return "melt"
+    return "melt"  # 兜底交给系统报错
 
 MELT = _find_melt()
 
@@ -293,9 +305,13 @@ class MltEngine:
             from PIL import Image, ImageDraw, ImageFont
             img = Image.new("RGBA", (800, 200), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
-            # 尝试加载系统字体·失败则用默认
+            # 跨平台字体候选: Windows(WINDIR自适应)/Mac/Linux
+            _windir = os.environ.get("WINDIR", "C:/Windows").replace("\\", "/")
             font = None
-            for fp in ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc"]:
+            for fp in [f"{_windir}/Fonts/simhei.ttf", f"{_windir}/Fonts/msyh.ttc",
+                       "/System/Library/Fonts/PingFang.ttc",
+                       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                       "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"]:
                 if os.path.exists(fp):
                     font = ImageFont.truetype(fp, font_size)
                     break

@@ -15,11 +15,13 @@ TEMPLATES_DIR = Path(__file__).parent / "templates" / "png"
 
 class TemplateGen:
     def __init__(self):
+        _windir = os.environ.get("WINDIR", "C:/Windows").replace("\\", "/")
         self._font_paths = [
-            "C:/Windows/Fonts/simhei.ttf",
-            "C:/Windows/Fonts/msyh.ttc",
+            f"{_windir}/Fonts/simhei.ttf",
+            f"{_windir}/Fonts/msyh.ttc",
             "/System/Library/Fonts/PingFang.ttc",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         ]
 
     def _get_font(self, size: int):
