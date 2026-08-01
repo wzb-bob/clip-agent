@@ -94,10 +94,11 @@ def _effect_to_ffmpeg(effect_name: str, in_label: str = "0", out_label: str = "v
 
     这是整个模块最关键的映射表——每个效果都有确定的 FFmpeg 实现。
     """
+    _font = _find_font() or "sans"  # 跨平台: Windows/Mac/Linux自动检测, 兜底fontconfig
     ffmpeg_map = {
         # ── 价格冲击类 ──
         "price_pop": (
-            f"[{in_label}]drawtext=fontfile=/Windows/Fonts/simhei.ttf:"
+            f"[{in_label}]drawtext=fontfile='{_font}':"
             "text='':fontsize=72:fontcolor=red@0.9:"
             "x=(w-text_w)/2:y=h*0.25-th:enable='between(t,0,2)'[{out_label}]"
         ),
@@ -190,7 +191,7 @@ def _effect_to_ffmpeg(effect_name: str, in_label: str = "0", out_label: str = "v
 
         # ── 定位标记 ──
         "location_pin": (
-            f"[{in_label}]drawtext=fontfile=/Windows/Fonts/simhei.ttf:"
+            f"[{in_label}]drawtext=fontfile='{_font}':"
             f"text='📍':fontsize=48:fontcolor=white@0.9:"
             f"x=iw*0.05:y=ih*0.85[{out_label}]"
         ),
@@ -769,7 +770,7 @@ def _texture_shader_to_vf(shader_name: str) -> str:
     """着色器名→纹理滤镜"""
     mapping = {
         "film_grain":       "noise=alls=8:allf=t",
-        "film_grain_light": "noise=alls=4:allf=t",
+        "film_grain_light": "noise=alls=7:allf=t",   # alls=4在x264后不可见(Kimi实测), 提到7
         "noise":            "noise=alls=10:allf=t",
         "vhs_noise":        "noise=alls=15:allf=t",
     }
@@ -790,6 +791,7 @@ def _overlay_broll(video_path: str, plan: VfxPlan,
     brolls = []
     accum = 0.0
     trans_dur = 0.3
+    main_track_files = {f for f, _ in segment_files}
 
     for i, seg in enumerate(plan.segments_vfx or []):
         dur = seg.get("duration", 2.0)
@@ -799,6 +801,11 @@ def _overlay_broll(video_path: str, plan: VfxPlan,
         if is_broll and i < len(segment_files) and len(segment_files) > 1:
             bf = segment_files[i][0]
             main_file = segment_files[0][0]  # 口播主文件
+            # PiP只在B-roll未进入主轨时才有意义——已在主轨=自重复,
+            # 且overlay窗口与素材PTS不对齐会出黑帧(实测黑块artifact)
+            if bf in main_track_files:
+                accum += dur - (trans_dur if i < len(plan.segments_vfx) - 1 else 0)
+                continue
             # 只有B-roll素材不同于口播文件才叠加(避免自身叠加)
             if bf and os.path.exists(bf) and bf != main_file:
                 brolls.append({
@@ -874,23 +881,27 @@ def _overlay_templates(video_path: str, plan: VfxPlan,
             overlays_to_add = []  # 一个段可能叠加多个模板
 
             if role == "hook":
-                # hook_glow: 大尺寸红色柔光背景(居中·营造氛围)
-                gf = templates_dir / "hook_glow.mp4"
-                if gf.exists():
-                    overlays_to_add.append({
-                        "file": str(gf), "start": start_ts, "duration": min(dur, 3.0),
-                        "x": int((width - 900) / 2), "y": int(height * 0.05),
-                        "text": "", "font_size": 0,
-                    })
-                # 价格条
-                bar_f = templates_dir / ("flash_bg.mp4" if cat == "引流进店" else "price_bg.mp4")
-                if bar_f.exists():
-                    fc = "black" if cat == "引流进店" else "white"
-                    overlays_to_add.append({
-                        "file": str(bar_f), "start": start_ts, "duration": min(dur, 2.5),
-                        "x": int((width - 800) / 2), "y": int(height * 0.15),
-                        "text": text, "font_size": 56, "font_color": fc,
-                    })
+                # 趣味长剧情: 不用红色模板——遮挡人脸且破坏悬念氛围, 只用段内drawtext白字
+                if cat == "趣味长剧情":
+                    pass
+                else:
+                    # hook_glow: 大尺寸红色柔光背景(居中·营造氛围)
+                    gf = templates_dir / "hook_glow.mp4"
+                    if gf.exists():
+                        overlays_to_add.append({
+                            "file": str(gf), "start": start_ts, "duration": min(dur, 3.0),
+                            "x": int((width - 900) / 2), "y": int(height * 0.05),
+                            "text": "", "font_size": 0,
+                        })
+                    # 价格条
+                    bar_f = templates_dir / ("flash_bg.mp4" if cat == "引流进店" else "price_bg.mp4")
+                    if bar_f.exists():
+                        fc = "black" if cat == "引流进店" else "white"
+                        overlays_to_add.append({
+                            "file": str(bar_f), "start": start_ts, "duration": min(dur, 2.5),
+                            "x": int((width - 800) / 2), "y": int(height * 0.15),
+                            "text": text, "font_size": 56, "font_color": fc,
+                        })
 
             elif role == "cta":
                 # cta_ring: 红色圆环框(全宽·聚焦CTA区域)
