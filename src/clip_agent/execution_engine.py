@@ -1114,6 +1114,11 @@ def _render_unified_vfx(sentences: list, video_slots: dict,
     if not plan.success:
         return False, {"error": "VFX计划构建失败"}
 
+    # SRT已覆盖逐句字幕·body段不再drawtext脚本文本(防双字幕+长句溢出·实测v1帧证据)
+    for sv in plan.segments_vfx:
+        if sv.get("role") not in ("hook", "cta"):
+            sv["text"] = ""
+
     # shot契约: 分镜意图逐镜覆盖(转场/情绪着色/字号/叠加文)
     if shot_fx:
         for sv in plan.segments_vfx:
