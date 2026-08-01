@@ -62,7 +62,7 @@ def _mkclip(path, vf=None, dur=2.0):
 def clips(tmp_path_factory):
     d = tmp_path_factory.mktemp("mc")
     normal = str(d / "normal.mp4"); _mkclip(normal)
-    dark = str(d / "dark.mp4"); _mkclip(dark, vf="eq=brightness=-0.35")
+    dark = str(d / "dark.mp4"); _mkclip(dark, vf="eq=brightness=-0.8")
     blurry = str(d / "blurry.mp4"); _mkclip(blurry, vf="gblur=sigma=10")
     return {"normal": normal, "dark": dark, "blurry": blurry}
 

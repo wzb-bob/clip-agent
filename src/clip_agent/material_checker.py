@@ -63,7 +63,8 @@ def _check_blur(frames: list) -> tuple[str | None, float]:
 
 
 def _check_face(frames: list) -> tuple[str | None, int]:
-    """无人脸。返回(issue_type|None, 有人脸的帧数)"""
+    """无人脸。返回(issue_type|None, 有人脸的帧数)
+    注意: 全身口播人脸占比小, 需放大帧检测(270x480下小脸<30px会漏·实测)"""
     global _FACE_CASCADE
     import cv2
     if _FACE_CASCADE is None:
@@ -71,8 +72,9 @@ def _check_face(frames: list) -> tuple[str | None, int]:
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     hits = 0
     for f in frames:
-        gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-        if len(_FACE_CASCADE.detectMultiScale(gray, 1.1, 5, minSize=(30, 30))):
+        big = cv2.resize(f, (540, 960))
+        gray = cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
+        if len(_FACE_CASCADE.detectMultiScale(gray, 1.1, 4, minSize=(40, 40))):
             hits += 1
     if hits == 0 and frames:
         return "no_face", 0
