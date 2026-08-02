@@ -25,17 +25,29 @@ _DEFAULT_DIRS = [
 _AUDIO_EXT = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
 
 
+# 本地BGM文件名前缀→类别映射(与scripts/generate_bgm_library.py输出一致)
+_LOCAL_BGM_PREFIX = {
+    "sell_hype": "团购售卖",
+    "boss_calm": "老板IP",
+    "flow_upbeat": "引流进店",
+    "story_ambient": "趣味长剧情",
+}
+
+
 def _candidate_names(category: str) -> list[str]:
-    """类别→候选曲名列表(后端曲库优先·独立模式用特征表只取类别)"""
+    """类别→候选曲名列表(后端曲库优先·本地文件名兜底)"""
     try:
         from ._imports import recommend_bgm
         if recommend_bgm:
             style = _CATEGORY_STYLE.get(category, _CATEGORY_STYLE["团购售卖"])
             tracks = recommend_bgm({"energy": style["energy"]}, script_category=category) or []
-            return [t.name for t in tracks if getattr(t, "name", "")]
+            names = [t.name for t in tracks if getattr(t, "name", "")]
+            if names:
+                return names
     except Exception:
         pass
-    return []
+    # 本地兜底: 文件名前缀匹配类别
+    return [prefix for prefix, cat in _LOCAL_BGM_PREFIX.items() if cat == category]
 
 
 def select_bgm(category: str, bgm_dirs: list[str] | None = None) -> str | None:
@@ -52,7 +64,18 @@ def select_bgm(category: str, bgm_dirs: list[str] | None = None) -> str | None:
                 if ext.lower() in _AUDIO_EXT and name in stem:
                     logger.info("BGM选中: %s ← %s", f, category)
                     return str(Path(d) / f)
-    # 2) 曲库无结果→目录里任意音频兜底(用户只放了一首的场景)
+    # 2) 本地前缀匹配(后端曲名不匹配时·用FFmpeg合成库)
+    local_prefixes = [p for p, cat in _LOCAL_BGM_PREFIX.items() if cat == category]
+    for prefix in local_prefixes:
+        for d in dirs:
+            if not os.path.isdir(d):
+                continue
+            for f in sorted(os.listdir(d)):
+                stem, ext = os.path.splitext(f)
+                if ext.lower() in _AUDIO_EXT and stem.startswith(prefix):
+                    logger.info("BGM本地: %s ← %s", f, category)
+                    return str(Path(d) / f)
+    # 3) 目录里任意音频兜底(用户只放了一首的场景)
     for d in dirs:
         if not os.path.isdir(d):
             continue
