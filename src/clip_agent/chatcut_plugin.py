@@ -410,6 +410,17 @@ def run_chatcut_workflow(
             except Exception as e:
                 logger.debug("artifact检测/修复跳过: %s", e)
 
+        # Step 6: Kimi Vision评审(5维评分·低于60分标记)
+        if results.get("output") and Path(results["output"]).exists():
+            try:
+                from .quality_reviewer import review_output
+                review = review_output(results["output"])
+                results["review"] = review
+                logger.info("Kimi评审: score=%d·verdict=%s",
+                           review.get("score", 0), review.get("verdict", "?"))
+            except Exception as e:
+                logger.debug("评审跳过: %s", e)
+
         results["success"] = bool(results.get("output"))
         results["elapsed"] = round(time.time() - t0, 1)
         results["segments"] = len(timeline.segments)
