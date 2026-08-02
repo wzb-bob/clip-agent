@@ -213,6 +213,27 @@ def run_chatcut_workflow(
         converted = _ensure_x264(str(vp))
         if converted:
             vp = Path(converted)
+
+        # Step 0.3: 素材质量门禁+评分(过暗/模糊→拒绝·否则打分)
+        try:
+            from .material_checker import check_material
+            from .material_scorer import score_single
+            qc = check_material(str(vp), need_face=True)
+            results["material_qc"] = qc
+            if not qc["pass"]:
+                issues = [i["detail"] for i in qc.get("issues", [])]
+                return {"success": False,
+                        "error": f"素材质量问题: {'; '.join(issues)}",
+                        "material_qc": qc}
+            # 质量评分(0-1·传给前端展示)
+            material_score = score_single(str(vp), "talking")
+            results["material_score"] = material_score
+            logger.info("素材评分: %.2f·技术=%.2f·人脸=%s",
+                       material_score["score"], material_score["technical"]["sharpness"],
+                       material_score["has_face"])
+        except Exception as e:
+            logger.debug("素材质量检测跳过: %s", e)
+
         broll_videos = [_ensure_x264(b) or b for b in (broll_videos or [])]
         product_videos = [_ensure_x264(p) or p for p in (product_videos or [])]
 
@@ -240,6 +261,35 @@ def run_chatcut_workflow(
         srt = generate_srt_from_video(str(vp), str(out / "subtitles.srt"),
                                       expected_script=script_text)
         results["steps"]["audio_to_subtitle"] = bool(srt)
+
+        # Step 2.5: 气口检测(5路信号融合·切点传给四类管线)
+        breath_report = None
+        try:
+            from .breath_detector import BreathDetector
+            breath_report = BreathDetector().analyze(vp)
+            results["steps"]["breath_detect"] = breath_report.total_points
+            if breath_report.best_cuts:
+                logger.info("气口检测: %d切点·best=%d·句间=%d",
+                           breath_report.total_points,
+                           len(breath_report.best_cuts),
+                           len(breath_report.sentence_breaks))
+        except Exception as e:
+            logger.debug("气口检测跳过: %s", e)
+
+        # Step 2.6: 节拍检测+切点对齐(呼吸切点→最近节拍±150ms)
+        try:
+            from .rhythm_engine import detect_bpm, align_to_beat
+            beat_info = detect_bpm(str(vp))
+            results["bpm"] = beat_info
+            if beat_info["bpm"] > 0 and breath_report and breath_report.best_cuts:
+                cut_pts = [p.at_sec for p in breath_report.best_cuts]
+                aligned = align_to_beat(cut_pts, beat_info)
+                logger.info("节拍对齐: %dBPM·%d/%d切点对齐",
+                           int(beat_info["bpm"]),
+                           sum(1 for a,b in zip(aligned,cut_pts) if a!=b),
+                           len(aligned))
+        except Exception as e:
+            logger.debug("节拍检测跳过: %s", e)
 
         # Step 3: 气口切割
         from .four_category_pipeline import run_four_category_pipeline, CategoryMaterials
