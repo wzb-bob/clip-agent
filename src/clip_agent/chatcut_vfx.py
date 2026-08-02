@@ -235,12 +235,14 @@ def build_vfx_plan(
     video_path: str,
     category: str = "团购售卖",   # 脚本类别——决定剪辑策略
     industry: str = "",          # 行业(可选)——微调色调
+    shot_json: list = None,     # 脚本Agent分镜语言(可选·逐镜驱动)
 ) -> VfxPlan:
     """
     为ChatCut时间线生成VFX执行计划。
 
     category: "团购售卖" | "老板IP" | "引流进店"
     industry: 10行业之一(可选, 用于微调色调)
+    shot_json: 脚本Agent输出的分镜JSON·有则逐镜驱动转场/情绪/字号/叠加文
 
     返回的 VfxPlan 包含可直接拼接的 FFmpeg 滤镜片段。
     """
@@ -296,6 +298,18 @@ def build_vfx_plan(
     engine.configure(BeatTriggerPresets.for_genre(beat_genre.get(category, "hype")))
     engine.set_beat_map(beats)
 
+    # ── Shot契约: 脚本Agent分镜语言→逐镜剪辑指令 ──
+    _shot_fx = {}
+    if shot_json:
+        try:
+            from .shot_script import parse_shot_script, shot_effects
+            _ss = parse_shot_script("", category, shot_json=shot_json)
+            if _ss.source == "shot_json":
+                _shot_fx = shot_effects(_ss)
+                logger.info("shot契约: %d镜→VFX逐镜驱动", len(_ss.shots))
+        except Exception as e:
+            logger.debug("shot_json VFX注入跳过: %s", e)
+
     # ── 逐段构建滤镜 ──
     segments = timeline.segments if hasattr(timeline, 'segments') else []
     seg_vfx_list = []
@@ -325,6 +339,20 @@ def build_vfx_plan(
         seg_mid = accum_time + dur/2
         for ct, cr in sorted(content_types.items()):
             if abs(ct - seg_mid) < 1.5:
+                ca_effect = cr.get("effect", "")
+                if ca_effect:
+                    effect_names = [ca_effect]
+                break
+
+        # Shot驱动: 分镜语言覆盖镜头级效果(景别字号/情绪着色器/叠加文)
+        shot_i = i + 1  # shot索引从1开始·segment从0开始
+        if shot_i in _shot_fx:
+            sfx = _shot_fx[shot_i]
+            if sfx.get("shader"):
+                effect_names = [sfx["shader"]]
+            seg.shot_text_size = sfx.get("text_size", 56)
+            if sfx.get("overlay_text"):
+                seg.overlay_text = sfx["overlay_text"]
                 ca_effect = cr.get("effect", "")
                 if ca_effect:
                     effect_names = [ca_effect]

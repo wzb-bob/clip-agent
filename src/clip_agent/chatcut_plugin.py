@@ -173,6 +173,7 @@ def run_chatcut_workflow(
     *,
     script_category: str = "",
     industry: str = "",
+    shot_json: list = None,
 ) -> dict:
     """
     ChatCut自动剪辑成片。
@@ -184,6 +185,10 @@ def run_chatcut_workflow(
       run_chatcut_workflow("素材.mp4", script_text="...",
                           script_category="老板IP", industry="餐饮",
                           broll_videos=["食材.mp4","门头.mp4"])
+
+    Shot驱动(有分镜语言):
+      run_chatcut_workflow("口播.mp4", script_text="...", shot_json=[{...}])
+      → 逐镜转场/情绪着色器/景别字号/叠加文
     """
     t0 = time.time()
     results = {"success": False, "steps": {}, "output": "", "vfx": {}}
@@ -254,7 +259,7 @@ def run_chatcut_workflow(
         try:
             from .chatcut_vfx import build_vfx_plan, render_with_vfx
 
-            vfx_plan = build_vfx_plan(timeline, str(vp), script_category, industry)
+            vfx_plan = build_vfx_plan(timeline, str(vp), script_category, industry, shot_json=shot_json)
             if vfx_plan.success:
                 segment_files = []
                 for s in timeline.segments:
