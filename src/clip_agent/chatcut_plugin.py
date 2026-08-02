@@ -255,6 +255,48 @@ def run_chatcut_workflow(
                                if k.startswith("broll")]
                 product_videos = [scored["best"][k] for k in scored["best"]
                                  if k.startswith("product")]
+            # 逐镜素材分配(shot→最佳素材·不重复·优先hook/CTA)
+            if shot_json and all_mats:
+                try:
+                    from .shot_material_matcher import (
+                        assign_materials_to_shots, material_variety_report)
+                    mat_info = {}
+                    for k, path in all_mats.items():
+                        slot_type = "talking" if "broll" not in k else "broll"
+                        # 复用之前评分
+                        if scored and k in scored.get("scores", {}):
+                            s = scored["scores"][k]
+                            import subprocess, json as _json
+                            has_face = False
+                            try:
+                                import cv2
+                                cap = cv2.VideoCapture(path)
+                                ret, f = cap.read()
+                                if ret:
+                                    gray = cv2.cvtColor(cv2.resize(f,(540,960)), cv2.COLOR_BGR2GRAY)
+                                    face_cascade = cv2.CascadeClassifier(
+                                        cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+                                    has_face = len(face_cascade.detectMultiScale(
+                                        gray,1.1,4,minSize=(40,40))) > 0
+                                cap.release()
+                            except: pass
+                            mat_info[path] = {"type": slot_type, "score": s["score"],
+                                             "has_face": has_face}
+                    shot_assignments = assign_materials_to_shots(
+                        shot_json, mat_info, script_text)
+                    results["shot_assignments"] = [
+                        {"shot": a.shot_index, "material": a.assigned_material,
+                         "type": a.material_type, "match": a.match_score,
+                         "priority": a.priority}
+                        for a in shot_assignments]
+                    results["material_variety"] = material_variety_report(
+                        shot_assignments)
+                    logger.info("逐镜分配: %d镜→多样性=%.0f%%",
+                               len(shot_assignments),
+                               results["material_variety"].get("diversity", 0) * 100)
+                except Exception as e:
+                    logger.debug("逐镜分配跳过: %s", e)
+
         except Exception as e:
             logger.debug("素材评分跳过: %s", e)
 
