@@ -394,13 +394,21 @@ def run_chatcut_workflow(
             results["output"] = export_draft_zip(timeline.draft_path)
             results["steps"]["draft_zip"] = bool(results["output"])
 
-        # Step 5: 确定性artifact检测(补Kimi盲区·失败静默)
+        # Step 5: 确定性artifact检测+自动修复
         if results.get("output") and Path(results["output"]).exists():
             try:
                 from .artifact_detector import detect_artifacts
-                results["artifact_check"] = detect_artifacts(results["output"])
+                from .artifact_repair import auto_repair
+                artifacts = detect_artifacts(results["output"])
+                results["artifact_check"] = artifacts
+                if artifacts:
+                    repaired = auto_repair(results["output"], artifacts)
+                    if repaired != results["output"]:
+                        results["output"] = repaired
+                        results["steps"]["artifact_repair"] = True
+                        logger.info("artifact自动修复: %s", [a.get("type") for a in artifacts])
             except Exception as e:
-                logger.debug("artifact检测跳过: %s", e)
+                logger.debug("artifact检测/修复跳过: %s", e)
 
         results["success"] = bool(results.get("output"))
         results["elapsed"] = round(time.time() - t0, 1)
