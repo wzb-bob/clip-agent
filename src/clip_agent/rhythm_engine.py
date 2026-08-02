@@ -76,6 +76,68 @@ def analyze_rhythm(whisper_segments: list[dict], energy_data: list[dict] = None)
     return profile
 
 
+def detect_bpm(audio_path: str) -> dict:
+    """librosa BPM+节拍检测——驱动节奏感知剪辑
+
+    Returns:
+        {"bpm": float, "beats": [float秒], "downbeats": [float秒],
+         "groove_strength": 0-1, "category": "fast/medium/slow"}
+    """
+    try:
+        import librosa
+        import numpy as np
+
+        # 加载音频·降采样加速
+        y, sr = librosa.load(audio_path, sr=22050, duration=60)
+
+        # BPM检测
+        tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = float(tempo[0]) if hasattr(tempo, '__len__') else float(tempo)
+        beat_times = list(librosa.frames_to_time(beats, sr=sr))
+
+        # 强拍检测(每小节第一拍)
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        downbeat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)[1]
+        downbeat_times = list(librosa.frames_to_time(downbeat_frames, sr=sr))
+
+        # 律动强度
+        pulse = librosa.beat.plp(y=y, sr=sr)
+        groove = min(1.0, float(np.mean(pulse)) * 5)
+
+        cat = "fast" if bpm > 120 else ("medium" if bpm > 80 else "slow")
+
+        return {
+            "bpm": round(bpm, 1), "beats": [round(t, 2) for t in beat_times],
+            "downbeats": [round(t, 2) for t in downbeat_times],
+            "groove_strength": round(groove, 2), "category": cat,
+        }
+    except Exception as e:
+        logger.debug("BPM检测失败·降级: %s", e)
+        return {"bpm": 0, "beats": [], "downbeats": [], "groove_strength": 0, "category": "medium"}
+
+
+def align_to_beat(cut_points: list[float], beat_info: dict, max_shift: float = 0.15) -> list[float]:
+    """切点对齐到最近节拍——±150ms范围内微调
+
+    策略: 快节奏(≥120BPM)→强对齐(±100ms)·慢节奏(<80BPM)→松对齐(±150ms)
+    """
+    if not beat_info.get("beats"):
+        return cut_points
+
+    beats = beat_info["beats"]
+    bpm = beat_info.get("bpm", 100)
+    tolerance = 0.10 if bpm >= 120 else (0.15 if bpm >= 80 else 0.20)
+
+    aligned = []
+    for cp in cut_points:
+        nearest = min(beats, key=lambda b: abs(b - cp))
+        if abs(nearest - cp) <= tolerance:
+            aligned.append(round(nearest, 2))
+        else:
+            aligned.append(cp)  # 离节拍太远·保持原位
+    return aligned
+
+
 def apply_rhythm_to_plan(plan_segments: list, rhythm: RhythmProfile) -> list:
     """
     将节奏特征应用到剪辑计划——调整每段的时长和转场。
