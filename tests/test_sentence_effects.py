@@ -34,8 +34,9 @@ def test_mood_shaders_exist():
 
 
 def test_xfade_per_category():
-    assert _xfade_for_category("趣味长剧情") == "dissolve"
-    assert _xfade_for_category("团购售卖") == "fade"      # 已验证不动
-    assert _xfade_for_category("老板IP") == "fade"        # 已验证不动
-    assert _xfade_for_category("引流进店") == "slideleft"  # 已验证不动
-    assert _xfade_for_category("未知类别") == "fade"
+    # v5.3: 从CATEGORY_STYLE动态读取·四类差异化转场
+    assert _xfade_for_category("趣味长剧情") == "dissolve"  # 悬念·慢融
+    assert _xfade_for_category("团购售卖") == "fade"       # 冲击·快切
+    assert _xfade_for_category("老板IP") == "dissolve"     # 故事·慢融
+    assert _xfade_for_category("引流进店") == "fade"       # 引流·快切
+    assert _xfade_for_category("未知类别") == "fade"       # 兜底

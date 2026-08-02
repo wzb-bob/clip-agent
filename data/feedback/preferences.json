@@ -1,28 +1,28 @@
 {
   "团购售卖": {
     "templates": {
-      "sale_price_first": 20
+      "sale_price_first": 22
     },
     "colors": {
-      "vivid": 20
+      "vivid": 22
     },
     "bgms": {
-      "快节奏卡点/电子": 20
+      "快节奏卡点/电子": 22
     },
-    "count": 20,
+    "count": 22,
     "avg_quality": 87.5
   },
   "老板IP": {
     "templates": {
-      "ip_story_beginning": 10
+      "ip_story_beginning": 11
     },
     "colors": {
-      "warm": 10
+      "warm": 11
     },
     "bgms": {
-      "温暖/治愈/钢琴": 10
+      "温暖/治愈/钢琴": 11
     },
-    "count": 10,
+    "count": 11,
     "avg_quality": 75.0
   }
 }

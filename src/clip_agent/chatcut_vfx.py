@@ -22,46 +22,61 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════
 
 CATEGORY_STYLE = {
-    # 只用eq调色+vignette暗角+noise颗粒——三种100%可靠的FFmpeg滤镜
     "团购售卖": {
         "label": "鲜艳冲击型",
-        "global_color": "warm_boost",     # eq: 暖色增强·食物更有食欲
-        "global_texture": "none",         # 干净·不分散注意力
-        "hook_effects": ["warm_boost"],             # 钩子=暖色
-        "body_effects": ["warm_grade"],             # 主体=暖色调
-        "broll_effects": ["bloom_light", "slow_zoom"], # B-roll=柔光+慢缩
-        "cta_effects": ["pulse_ring"],              # CTA=脉冲圈(drawbox,无字体依赖)
-        "transition": "crossfade",        # 交叉淡入
+        "global_color": "warm_boost",
+        "global_texture": "none",
+        "hook_effects": ["warm_boost"],
+        "body_effects": ["warm_grade"],
+        "broll_effects": ["bloom_light", "slow_zoom"],
+        "cta_effects": ["pulse_ring"],
+        "transition": "fade",             # 快切·信息密集
+        "pacing": "fast",                 # 快节奏(<2s/镜)
+        "text_priority": "price_first",   # 价格优先·第一帧报价
+        "bgm_energy": "high",             # 高能BGM
+        "shot_duration_range": [1.5, 3.0], # 短镜·快切
     },
     "老板IP": {
         "label": "故事质感型",
-        "global_color": "film_warm",      # eq: 胶片暖色·怀旧真实
-        "global_texture": "film_grain_light", # noise: 胶片颗粒·增加质感
-        "hook_effects": ["vignette_soft"],          # 钩子=暗角·聚焦人脸
-        "body_effects": ["film_grain_light"],       # 主体=轻颗粒
-        "broll_effects": ["crossfade_slow"],        # B-roll=慢淡入
-        "cta_effects": ["glow_warm"],               # CTA=暖光引导(boxblur+blend)
-        "transition": "crossfade",        # 交叉淡入
+        "global_color": "film_warm",
+        "global_texture": "film_grain_light",
+        "hook_effects": ["vignette_soft"],
+        "body_effects": ["film_grain_light"],
+        "broll_effects": ["crossfade_slow"],
+        "cta_effects": ["glow_warm"],
+        "transition": "dissolve",          # 慢融·叙事流
+        "pacing": "slow",                  # 慢节奏(>3s/镜)
+        "text_priority": "story_first",    # 故事优先·人设先立
+        "bgm_energy": "low",               # 温暖BGM
+        "shot_duration_range": [3.0, 6.0], # 长镜·沉浸
     },
     "趣味长剧情": {
         "label": "悬念节奏型",
-        "global_color": "bleach_bypass",   # eq: 高对比·电影感
-        "global_texture": "film_grain_light", # 胶片颗粒·质感
-        "hook_effects": ["speed_ramp", "vignette_soft"],   # 钩子=变速+暗角
-        "body_effects": ["film_grain_light"],              # 主体=胶片质感
-        "broll_effects": ["crossfade_slow", "bloom_light"],# B-roll=慢淡入+柔光
-        "cta_effects": ["glow_warm"],                     # CTA=暖光
-        "transition": "crossfade",         # 交叉淡入
+        "global_color": "bleach_bypass",
+        "global_texture": "film_grain_light",
+        "hook_effects": ["speed_ramp", "vignette_soft"],
+        "body_effects": ["film_grain_light"],
+        "broll_effects": ["crossfade_slow", "bloom_light"],
+        "cta_effects": ["glow_warm"],
+        "transition": "dissolve",           # 慢变·构建悬念
+        "pacing": "variable",               # 变速·快慢交替
+        "text_priority": "hook_first",      # 悬念优先·开头抓人
+        "bgm_energy": "low",                # 叙事BGM
+        "shot_duration_range": [2.0, 5.0],  # 变速·张弛
     },
     "引流进店": {
         "label": "明亮引导型",
-        "global_color": "bright_clean",   # eq: 明亮干净·展示环境
-        "global_texture": "none",         # 无颗粒·保持清晰
-        "hook_effects": ["speed_ramp"],             # 钩子=变速(setpts)
-        "body_effects": ["bright_grade", "stabilize"], # 主体=明亮+防抖
-        "broll_effects": ["bloom_light", "glow_warm"], # B-roll=柔光+暖光
-        "cta_effects": ["pulse_ring"],              # CTA=脉冲圈
-        "transition": "crossfade",        # 交叉淡入
+        "global_color": "bright_clean",
+        "global_texture": "none",
+        "hook_effects": ["speed_ramp"],
+        "body_effects": ["bright_grade", "stabilize"],
+        "broll_effects": ["bloom_light", "glow_warm"],
+        "cta_effects": ["pulse_ring"],
+        "transition": "fade",               # 快切·高能
+        "pacing": "fast",                   # 快节奏(<2s/镜)
+        "text_priority": "location_first",  # 地址优先·方便找到
+        "bgm_energy": "medium",             # 明快BGM
+        "shot_duration_range": [1.5, 2.5],  # 极短镜·紧迫感
     },
 }
 
@@ -871,9 +886,9 @@ def _texture_shader_to_vf(shader_name: str) -> str:
 
 
 def _xfade_for_category(category: str) -> str:
-    """脚本类别→xfade转场类型"""
-    return {"团购售卖": "fade", "老板IP": "fade", "引流进店": "slideleft",
-            "趣味长剧情": "dissolve"}.get(category, "fade")
+    """脚本类别→xfade转场类型(从CATEGORY_STYLE读取·支持用户自定义)"""
+    style = CATEGORY_STYLE.get(category, CATEGORY_STYLE["团购售卖"])
+    return style.get("transition", "fade")
 
 
 # ── 句级语义→效果映射(趣味长剧情先行) ──
