@@ -237,6 +237,27 @@ def run_chatcut_workflow(
         broll_videos = [_ensure_x264(b) or b for b in (broll_videos or [])]
         product_videos = [_ensure_x264(p) or p for p in (product_videos or [])]
 
+        # 素材评分择优: 多素材→自动选最高分(节省管线时间·用最好的)
+        try:
+            from .material_scorer import score_materials
+            all_mats = {}
+            if broll_videos:
+                for i, b in enumerate(broll_videos):
+                    all_mats[f"broll_{i}"] = b
+            if product_videos:
+                for i, p in enumerate(product_videos):
+                    all_mats[f"product_{i}"] = p
+            if all_mats:
+                scored = score_materials(all_mats, shot_json=shot_json)
+                results["material_scores"] = scored
+                # 只保留评分≥0.3的素材
+                broll_videos = [scored["best"][k] for k in scored["best"]
+                               if k.startswith("broll")]
+                product_videos = [scored["best"][k] for k in scored["best"]
+                                 if k.startswith("product")]
+        except Exception as e:
+            logger.debug("素材评分跳过: %s", e)
+
         # Step 0.5: 脚本↔口播时长匹配(给脚本Agent可机读的自我纠正信号)
         if script_text:
             try:
@@ -310,6 +331,10 @@ def run_chatcut_workflow(
             from .chatcut_vfx import build_vfx_plan, render_with_vfx
 
             vfx_plan = build_vfx_plan(timeline, str(vp), script_category, industry, shot_json=shot_json)
+            # 注入实测BPM(覆盖默认category BPM·节拍感知驱动)
+            if beat_info and beat_info.get("bpm", 0) > 0:
+                vfx_plan.bpm = int(beat_info["bpm"])
+                vfx_plan.beat_count = int(len(beat_info.get("beats", [])) * (vfx_plan.bpm / 60) * (float(results.get("duration", "10s").replace("s","")) or 10))
             if vfx_plan.success:
                 segment_files = []
                 for s in timeline.segments:
@@ -410,20 +435,56 @@ def run_chatcut_workflow(
             except Exception as e:
                 logger.debug("artifact检测/修复跳过: %s", e)
 
-        # Step 6: Kimi Vision评审(5维评分·低于60分标记)
-        if results.get("output") and Path(results["output"]).exists():
-            try:
-                from .quality_reviewer import review_output
-                review = review_output(results["output"])
-                results["review"] = review
-                logger.info("Kimi评审: score=%d·verdict=%s",
-                           review.get("score", 0), review.get("verdict", "?"))
-            except Exception as e:
-                logger.debug("评审跳过: %s", e)
+        # Step 6: Kimi Vision评审+自动重试闭环(低于60分→换策略重渲·最多2轮)
+        retry_count = 0
+        while retry_count <= 2:
+            if results.get("output") and Path(results["output"]).exists():
+                try:
+                    from .quality_reviewer import review_output, should_retry
+                    review = review_output(results["output"])
+                    results["review"] = review
+                    results[f"review_r{retry_count}"] = review
+                    logger.info("Kimi评审(r%d): score=%d·verdict=%s",
+                               retry_count, review.get("score", 0), review.get("verdict", "?"))
+
+                    if not should_retry(review) or retry_count >= 2:
+                        break
+
+                    # 重试: 切换渲染策略
+                    retry_count += 1
+                    logger.warning("评审不达标·重试%d/2·换策略", retry_count)
+                    mp4_path = str(out / f"成片_{vp.stem}_r{retry_count}.mp4")
+
+                    if retry_count == 1:
+                        # 第一轮重试: VFX→MLT切换或调整参数
+                        from .mlt_engine import MltEngine, mlt_verify
+                        if mlt_verify():
+                            mlt_engine = MltEngine()
+                            mlt_result = mlt_engine.render_with_fallback(
+                                type('P',(),{'category':script_category,'segments_vfx':[]})(),
+                                {"talking":str(vp),"broll":broll_videos or []}, mp4_path)
+                            if mlt_result.success:
+                                results["output"] = mlt_result.output_path
+                                results["steps"]["mlt_retry"] = True
+                    else:
+                        # 第二轮: 基础渲染兜底
+                        from .pro_renderer import ProRenderer
+                        pr = ProRenderer()
+                        pr_result = pr.render(str(vp), mp4_path,
+                                             script_text=script_text)
+                        if pr_result and os.path.exists(mp4_path):
+                            results["output"] = mp4_path
+                            results["steps"]["basic_retry"] = True
+                except Exception as e:
+                    logger.debug("评审/重试跳过: %s", e)
+                    break
+            else:
+                break
 
         results["success"] = bool(results.get("output"))
         results["elapsed"] = round(time.time() - t0, 1)
         results["segments"] = len(timeline.segments)
+        results["retry_count"] = retry_count
 
     except Exception as e:
         results["error"] = str(e)[:200]
