@@ -676,7 +676,7 @@ def render_with_vfx(
                 "-filter_complex",
                 # BGM循环+归一化 → sidechain压缩(人声轨触发) → 与人声混合
                 f"[1:a]aloop=loop=-1:size=2e+09,volume=0.8[bgm];"
-                f"[bgm][0:a]sidechaincompress=threshold=0.02:ratio=5:attack=15:release=150:level_sc=1[bgm_ducked];"
+                f"[bgm][0:a]sidechaincompress=threshold=0.012:ratio=5:attack=10:release=120:level_sc=1[bgm_ducked];"
                 f"[0:a][bgm_ducked]amix=inputs=2:duration=first:weights=1 0.35[amix]",
                 "-map", "0:v:0", "-map", "[amix]",
                 "-c:v", "copy",
